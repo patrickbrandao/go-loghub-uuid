@@ -60,7 +60,7 @@ func newID() string { return Gen.GenerateString(uuid.Level3) }
 - Uso completo (todas as funções): [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md)
 - Testes e benchmark: [docs/TEST-AND-BENCHMARK.md](docs/TEST-AND-BENCHMARK.md)
 - Especificação de desenvolvimento (agnóstica de linguagem):
-  [especificacao/ESPECIFICACAO-DESENVOLVIMENTO.md](especificacao/ESPECIFICACAO-DESENVOLVIMENTO.md)
+  [docs/SPEC.md](docs/SPEC.md)
 
 ## Licença
 
