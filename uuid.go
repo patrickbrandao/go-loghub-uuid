@@ -59,9 +59,18 @@ type UUID [16]byte
 // Internamente o gerador padrão mantém um pool de geradores
 // pseudoaleatórios rápidos (PCG) — um por thread em uso — eliminando
 // contenção de lock e permitindo gerar milhões de IDs por segundo.
+//
+// O valor zero de Generator NÃO é utilizável: use NewGenerator ou
+// NewGeneratorWith. Por segurança, um Generator sem fonte de entropia
+// (valor zero, ou ponteiro nulo) recorre ao gerador padrão do pacote em
+// vez de entrar em pânico.
 type Generator struct {
-	// twoWords devolve dois blocos de 64 bits aleatórios.
-	// É a única fonte de entropia usada na montagem de um UUID.
+	// oneWord devolve um bloco de 64 bits aleatórios. É usado nos níveis
+	// 2 e 3, onde rand_a carrega o tempo e só rand_b precisa de entropia.
+	oneWord func() uint64
+
+	// twoWords devolve dois blocos de 64 bits aleatórios. É usado no
+	// nível 1, o único em que rand_a também é aleatório.
 	twoWords func() (uint64, uint64)
 }
 
@@ -71,6 +80,14 @@ type Generator struct {
 // sync.Pool (sem locks compartilhados). Cada PCG é semeado uma única
 // vez, na criação, a partir de crypto/rand (alta qualidade), e depois
 // avança de forma puramente local — barato e contention-free.
+//
+// ATENÇÃO — o PCG é um gerador pseudoaleatório estatístico, NÃO
+// criptográfico: quem observar alguns UUIDs produzidos por este gerador
+// consegue reconstruir o estado interno e prever os seguintes. Além
+// disso, todo UUIDv7 expõe o instante de criação por construção. Não use
+// estes identificadores como segredo (token de sessão, link privado,
+// chave de recuperação); para esse fim, monte o gerador com entropia
+// criptográfica através de NewGeneratorWith.
 func NewGenerator() *Generator {
 	pool := &sync.Pool{
 		New: func() any {
@@ -79,6 +96,12 @@ func NewGenerator() *Generator {
 		},
 	}
 	return &Generator{
+		oneWord: func() uint64 {
+			r := pool.Get().(*rand.Rand)
+			a := r.Uint64()
+			pool.Put(r)
+			return a
+		},
 		twoWords: func() (uint64, uint64) {
 			r := pool.Get().(*rand.Rand)
 			a, b := r.Uint64(), r.Uint64()
@@ -96,8 +119,18 @@ func NewGenerator() *Generator {
 // Use isto, por exemplo, para forçar entropia criptográfica
 // (crypto/rand) em todas as gerações, abrindo mão de parte da
 // velocidade em troca de imprevisibilidade total.
+//
+// A fonte é chamada uma única vez por UUID nos níveis 2 e 3 (onde
+// rand_a carrega o tempo) e duas vezes no nível 1.
+//
+// Entra em pânico se source for nula: é um erro de configuração, que
+// deve aparecer no boot e não na primeira geração.
 func NewGeneratorWith(source func() uint64) *Generator {
+	if source == nil {
+		panic("loghubuuid: NewGeneratorWith recebeu uma fonte de entropia nula")
+	}
 	return &Generator{
+		oneWord:  source,
 		twoWords: func() (uint64, uint64) { return source(), source() },
 	}
 }
@@ -129,15 +162,43 @@ func strongSeed() uint64 {
 //	rand_a (12 bits) = microssegundos (0-999) nos níveis 2 e 3; aleatório no nível 1.
 //	rand_b[61:52]    = nanossegundos  (0-999) no nível 3; aleatório nos níveis 1 e 2.
 //	demais bits      = aleatórios.
+//
+// O campo de 48 bits de milissegundos comporta datas até 10889-08-02.
+// Relógios anteriores à época Unix (1970-01-01) degradam para a própria
+// época, em vez de produzirem um timestamp corrompido.
 func (g *Generator) Generate(level Level) UUID {
-	now := time.Now().UnixNano() // nanossegundos desde 1970-01-01 UTC
+	// Um Generator montado fora dos construtores (valor zero embutido em
+	// outra struct, ou ponteiro nulo) não tem fonte de entropia: usa a do
+	// gerador padrão do pacote em vez de derrubar o processo.
+	if g == nil || g.oneWord == nil || g.twoWords == nil {
+		g = defaultGenerator
+	}
 
-	ms := now / 1_000_000        // milissegundos (cabem em 48 bits até o ano 10889)
-	rem := now % 1_000_000       // parte sub-milissegundo: 0..999_999 ns
+	// Unix()/Nanosecond() em vez de UnixNano(): o inteiro de nanossegundos
+	// satura em 2262-04-11, enquanto a leitura em duas partes não tem esse
+	// limite e Nanosecond() nunca devolve valor negativo.
+	now := time.Now()
+	sec := now.Unix()               // segundos desde 1970-01-01 UTC
+	nsec := int64(now.Nanosecond()) // fração do segundo: 0..999_999_999
+
+	ms := sec*1_000 + nsec/1_000_000 // milissegundos desde a época
+	if ms < 0 {
+		// Relógio ajustado para antes de 1970: sem esse piso, os campos
+		// sub-milissegundo estourariam a faixa 0..999 ao virarem uint16.
+		ms, nsec = 0, 0
+	}
+	rem := nsec % 1_000_000      // parte sub-milissegundo: 0..999_999 ns
 	micro := uint16(rem / 1_000) // microssegundos dentro do ms: 0..999
 	nano := uint16(rem % 1_000)  // nanossegundos dentro do micro: 0..999
 
-	r1, r2 := g.twoWords()
+	// Nos níveis 2 e 3 rand_a carrega os microssegundos, portanto r1 seria
+	// descartado: nesses casos sorteia-se uma única palavra de 64 bits.
+	var r1, r2 uint64
+	if level == Level2 || level == Level3 {
+		r2 = g.oneWord()
+	} else {
+		r1, r2 = g.twoWords()
+	}
 
 	var u UUID
 

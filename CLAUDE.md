@@ -19,9 +19,14 @@ go test ./tests/ -run '^$' -bench Benchmark -benchmem     # benchmarks (no tests
 go run ./tests/benchmark-bulk                             # generate 1,000,000 per level
 ```
 
-Note: tests live in `./tests/` and import the library by its **module path** (as an external consumer would), not as an internal package. Run `go test` against `./tests/`, not the repo root.
+```bash
+go test ./tests/ -race -run 'TestConcurrentUniqueness|TestMassConcurrent'  # detector de corrida
+go test ./tests/ -run '^$' -fuzz FuzzFromString -fuzztime 60s              # fuzzing do parser
+```
 
-`TestMonotonicity` depends on a **nanosecond-resolution wall clock** and fails on hosts whose `time.Now()` is only microsecond-resolution (e.g. macOS, where the embedded nanosecond digit is always 0 and random low bits then break ordering ties). This is environmental, not a regression — it passes on a nanosecond-clock host (such as the Linux VM in the docs). Use `-short` to skip the 1M mass tests.
+Note: tests live in `./tests/` and import the library by its **module path** (as an external consumer would), not as an internal package. Run `go test` against `./tests/`, not the repo root. Use `-short` to skip the 1M mass tests.
+
+**Ordering has no monotonic counter.** Ordering is chronological *at the level's resolution*, with a **random** tie-break inside the same embedded instant. Generating a UUID is faster than most hosts' clock step, so consecutive UUIDs routinely tie (always, at Level1, whose resolution is the millisecond). Never write an ordering test that counts "regressions in a tight loop against a tolerated threshold" — that measures the host clock, not the library, and is why the old `TestMonotonicity` failed permanently on microsecond-clock hosts such as macOS. The clock-independent invariant lives in `TestOrderingFollowsEmbeddedTime`; `TestTieRateReport` reports the tie rate as a diagnostic; `TestMonotonicity` now sleeps between generations so the embedded instant genuinely advances.
 
 ## Architecture
 
@@ -42,7 +47,9 @@ A UUIDv7 carries a 48-bit millisecond timestamp in its top bytes; the lower bits
 | `Level2` | microseconds 0–999 | random                  | random           |
 | `Level3` | microseconds 0–999 | nanoseconds 0–999       | random (52 bits) |
 
-Because the precision bits sit immediately after the milliseconds, **lexicographic string order stays chronological** across all levels. Unknown `Level` values fall back to `Level1`. The exact byte layout is documented in the `Generate` doc comment at [uuid.go:119](uuid.go:119) and in [STARTHERE.md](STARTHERE.md) §4 — keep these two in sync if the bit layout ever changes.
+Because the precision bits sit immediately after the milliseconds, **lexicographic string order stays chronological** across all levels (subject to the tie-break caveat above). Unknown `Level` values fall back to `Level1`. The exact byte layout is documented in the `Generate` doc comment at [uuid.go:148](uuid.go:148) and in [STARTHERE.md](STARTHERE.md) §4 — keep these two in sync if the bit layout ever changes.
+
+**Entropy draws per level.** Level2/Level3 put the microseconds in `rand_a`, so they consume **one** 64-bit word; only Level1 (and unknown levels, which behave as Level1) consumes **two**. `tests/robustness_test.go` locks this in — it matters for callers who supply `crypto/rand` through `NewGeneratorWith`.
 
 `ImportBinary` is deliberately **level-blind**: it always reads `rand_a` as microseconds and the top 10 bits of `rand_b` as nanoseconds, treating random bits as if they were precise time (per spec). It cannot know which level produced a UUID.
 

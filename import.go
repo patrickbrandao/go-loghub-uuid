@@ -8,10 +8,21 @@ package loghubuuid
 // a especificação, a importação os trata como tempo preciso e devolve o
 // valor lido nos respectivos campos sem julgar a origem.
 type Time struct {
-	Seconds      int64 // timestamp Unix em segundos desde 1970-01-01 UTC
-	Milliseconds int   // 0..999  (fração do segundo)
-	Microseconds int   // 0..999  (fração do milissegundo) — lido de rand_a
-	Nanoseconds  int   // 0..999  (fração do microssegundo) — lido de rand_b[61:52]
+	// Seconds é o timestamp Unix em segundos desde 1970-01-01 UTC.
+	Seconds int64
+
+	// Milliseconds é a fração do segundo: sempre 0..999.
+	Milliseconds int
+
+	// Microseconds é lido de rand_a. Vale 0..999 (fração do
+	// milissegundo) quando o UUID é de Level2 ou Level3; em UUIDs de
+	// Level1 são 12 bits aleatórios, portanto 0..4095.
+	Microseconds int
+
+	// Nanoseconds é lido de rand_b[61:52]. Vale 0..999 (fração do
+	// microssegundo) quando o UUID é de Level3; em UUIDs de Level1 ou
+	// Level2 são 10 bits aleatórios, portanto 0..1023.
+	Nanoseconds int
 }
 
 // ImportBinary extrai as propriedades de tempo de um UUID binário.

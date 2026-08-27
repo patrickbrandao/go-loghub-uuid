@@ -1,0 +1,14 @@
+# Artefatos do macOS
+.DS_Store
+
+# Binários e artefatos de teste do Go
+*.test
+*.out
+*.prof
+/test-uuid
+
+# Corpus gerado pelo fuzzing (as sementes ficam no próprio fuzz_test.go)
+tests/testdata/fuzz/
+
+# Relatórios de revisão de código (mantidos apenas na máquina do autor)
+tasks/
