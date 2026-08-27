@@ -28,26 +28,36 @@ go-loghub-uuid/
 ├── README.md               # descrição rápida + uso rápido
 ├── STARTHERE.md            # este mapa
 ├── LICENSE                 # MIT
+├── CLAUDE.md               # instruções de manutenção (ferramental)
+├── PROMPT.md               # requisitos originais do projeto
 │
 ├── docs/                   # documentação de uso
 │   ├── DEPLOY-FAST.md
 │   ├── DEPLOY-FULL.md
-│   └── TEST-AND-BENCHMARK.md
-│
-├── especificacao/          # como reimplementar do zero (sem código)
-│   └── ESPECIFICACAO-DESENVOLVIMENTO.md
+│   ├── TEST-AND-BENCHMARK.md
+│   ├── SPEC.md             # como reimplementar do zero (sem código)
+│   └── git.md
 │
 └── tests/                  # tudo que NÃO vai para produção
     ├── doc.go
     ├── generation_test.go      # testes funcionais
+    ├── parsing_test.go         # robustez de FromString/String
+    ├── layout_test.go          # layout de bits com entropia determinística
+    ├── import_test.go          # extração das propriedades de tempo
+    ├── ordering_test.go        # ordenação, unicidade e concorrência
+    ├── robustness_test.go      # bordas do Generator e consumo de entropia
+    ├── alloc_test.go           # trava de zero alocações
+    ├── fuzz_test.go            # FuzzFromString
     ├── benchmark_test.go       # benchmarks + massa de 1.000.000
     └── benchmark-bulk/
         └── main.go             # executável: go run ./tests/benchmark-bulk
 ```
 
 A **raiz** contém apenas o necessário para usar a biblioteca em produção
-(os três `.go`, o `go.mod`, README/STARTHERE/LICENSE). Documentação,
-especificação e testes ficam em pastas próprias.
+(os três `.go`, o `go.mod`, README/STARTHERE/LICENSE) mais os dois
+arquivos de suporte ao desenvolvimento (`CLAUDE.md`, `PROMPT.md`).
+Documentação, especificação, relatórios e testes ficam em pastas
+próprias.
 
 ---
 
@@ -61,7 +71,13 @@ especificação e testes ficam em pastas próprias.
 
 **Construtores**
 - `NewGenerator() *Generator` — padrão rápido (pool de PCG, sem lock).
-- `NewGeneratorWith(source func() uint64) *Generator` — entropia personalizada.
+- `NewGeneratorWith(source func() uint64) *Generator` — entropia
+  personalizada; `source` precisa ser segura para concorrência e entra em
+  pânico se for `nil`.
+
+> O gerador padrão usa PCG, um PRNG **estatístico**, não criptográfico:
+> não use estes UUIDs como segredo. Ver a seção "Aviso de segurança" do
+> [README.md](README.md).
 
 **Geração**
 - `(*Generator) Generate(Level) UUID`
@@ -123,7 +139,7 @@ por string continua cronológica.
 - **Quero usar tudo**: [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md)
 - **Quero medir desempenho**: [docs/TEST-AND-BENCHMARK.md](docs/TEST-AND-BENCHMARK.md)
 - **Quero reimplementar em outra linguagem**:
-  [especificacao/ESPECIFICACAO-DESENVOLVIMENTO.md](especificacao/ESPECIFICACAO-DESENVOLVIMENTO.md)
+  [docs/SPEC.md](docs/SPEC.md)
 - **Quero ler o código**: comece por `uuid.go` (geração), depois
   `conversion.go` e `import.go`.
 

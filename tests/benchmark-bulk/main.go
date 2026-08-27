@@ -26,6 +26,21 @@ func main() {
 	var bs string
 
 	fmt.Printf("== Benchmark em massa — %d UUIDs por cenário ==\n\n", *n)
+	// Passagem de aquecimento, descartada. Sem ela o primeiro cenário
+	// medido paga sozinho o custo de aquecer cache de instruções,
+	// escalonamento de frequência da CPU e preenchimento do sync.Pool, e
+	// aparece artificialmente mais lento que os demais — viés que já
+	// distorceu as tabelas publicadas em docs/TEST-AND-BENCHMARK.md.
+	warmup := *n / 10
+	if warmup > 100_000 {
+		warmup = 100_000
+	}
+	for i := 0; i < warmup; i++ {
+		bu = gen.Generate(uuid.Level1)
+		bu = gen.Generate(uuid.Level3)
+		bs = gen.GenerateString(uuid.Level3)
+	}
+
 	fmt.Printf("%-22s %14s %16s %16s\n", "Cenário", "Tempo total", "ns por UUID", "UUIDs por ms")
 	fmt.Printf("%-22s %14s %16s %16s\n", "----------------------", "--------------", "----------------", "----------------")
 

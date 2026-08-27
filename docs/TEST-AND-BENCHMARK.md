@@ -67,22 +67,56 @@ nível, em binário e string.
 
 ## 4. Resultados de referência
 
-Medições reais obtidas em uma VM modesta (Intel Xeon @ 2.80 GHz, Go
-1.22, núcleo único exceto onde indicado). **Em CPUs de altíssima
-velocidade os números são bem melhores** — estes servem apenas de piso.
+> **Sobre as tabelas anteriores.** Até a revisão de 2026-08-27, tanto
+> `TestMassOneMillion` quanto `benchmark-bulk` mediam os cenários em
+> sequência **sem passagem de aquecimento**. O primeiro cenário medido
+> pagava sozinho o custo de aquecer cache de instruções, escalonamento de
+> frequência da CPU e preenchimento do `sync.Pool` — e como o Nível 1 é
+> sempre o primeiro, aparecia mais lento do que realmente era. Ambos os
+> medidores passaram a descartar uma passagem de aquecimento, e o cálculo
+> da taxa deixou de usar `dur.Milliseconds()+1` (que arredondava para
+> baixo e ainda somava 1 ms) em favor de nanossegundos. Os números abaixo
+> foram remedidos com o código corrigido.
 
-Benchmark (`-benchmem`):
+### Host A — Apple M2, macOS, Go 1.27, GOMAXPROCS=8
+
+Benchmark (`go test ./tests/ -run '^$' -bench Benchmark -benchmem -benchtime=2s`):
 
 | Benchmark                       | ns/op | alloc/op | bytes/op |
 |---------------------------------|------:|---------:|---------:|
-| `GenerateLevel1` (binário)      | ~98   | 0        | 0        |
-| `GenerateLevel2` (binário)      | ~85   | 0        | 0        |
-| `GenerateLevel3` (binário)      | ~86   | 0        | 0        |
-| `GenerateStringLevel1`          | ~161  | 1        | 48       |
-| `GenerateStringLevel3`          | ~165  | 1        | 48       |
-| `GenerateLevel3Parallel`        | ~88   | 0        | 0        |
+| `GenerateLevel1` (binário)      | ~43,5 | 0        | 0        |
+| `GenerateLevel2` (binário)      | ~41,1 | 0        | 0        |
+| `GenerateLevel3` (binário)      | ~42,0 | 0        | 0        |
+| `GenerateStringLevel1`          | ~67,9 | 1        | 48       |
+| `GenerateStringLevel3`          | ~64,4 | 1        | 48       |
+| `GenerateLevel3Parallel`        | ~9,7  | 0        | 0        |
+| `FromString`                    | ~31,6 | 0        | 0        |
 
-Geração em massa de 1.000.000 (executável autônomo):
+Geração em massa de 1.000.000 (`go run ./tests/benchmark-bulk`):
+
+| Cenário            | Tempo total | ns/UUID | UUIDs/ms |
+|--------------------|------------:|--------:|---------:|
+| Nível 1 (binário)  | ~52 ms      | ~52     | ~19.100  |
+| Nível 2 (binário)  | ~41 ms      | ~41     | ~24.500  |
+| Nível 3 (binário)  | ~41 ms      | ~41     | ~24.300  |
+| Nível 1 (string)   | ~68 ms      | ~68     | ~14.600  |
+| Nível 2 (string)   | ~65 ms      | ~65     | ~15.400  |
+| Nível 3 (string)   | ~69 ms      | ~69     | ~14.400  |
+
+Concorrente (1.000.000 de Nível 3 em 256 goroutines): ~7,8 ms,
+~128.000 UUIDs/ms agregados.
+
+**Por que o Nível 1 agora é o mais lento.** Não é mais viés de
+aquecimento: é real e esperado. Nos níveis 2 e 3 o campo `rand_a` carrega
+os microssegundos, então basta **uma** palavra de 64 bits do gerador
+pseudoaleatório; só o Nível 1 (e os níveis desconhecidos, que se
+comportam como ele) precisa de **duas**. A diferença é exatamente o custo
+de um sorteio extra.
+
+### Host B — VM modesta, Intel Xeon @ 2.80 GHz, Go 1.22, núcleo único
+
+Piso de referência para máquinas lentas (números da revisão anterior,
+medidos sem aquecimento — leia o Nível 1 com essa ressalva):
 
 | Cenário            | Tempo total | ns/UUID | UUIDs/ms |
 |--------------------|------------:|--------:|---------:|
@@ -93,14 +127,17 @@ Geração em massa de 1.000.000 (executável autônomo):
 | Nível 2 (string)   | ~163 ms     | ~163    | ~6.120   |
 | Nível 3 (string)   | ~165 ms     | ~165    | ~6.045   |
 
-Concorrente (1.000.000 de Nível 3 em 256 goroutines): ~86 ms,
-~11.600 UUIDs/ms agregados.
-
 Leitura dos números: a geração binária custa **dezenas de
-nanossegundos** e **zero alocações**; já passa de **11 mil UUIDs por
-milissegundo** por núcleo nesta VM lenta. A serialização em string
-adiciona uma alocação de 48 bytes (a própria string). A meta de
-"milhares de UUIDs por milissegundo" é atingida com folga.
+nanossegundos** e **zero alocações**; passa de **11 mil UUIDs por
+milissegundo** por núcleo até na VM lenta, e de **24 mil** em CPU
+moderna. A serialização em string adiciona uma alocação de 48 bytes (a
+própria string). A meta de "milhares de UUIDs por milissegundo" é
+atingida com folga.
+
+**Onde está o teto.** Cerca de dois terços do custo de gerar um UUID é a
+leitura do relógio (`time.Now()`), e esse custo é irredutível — a
+precisão sub-milissegundo é a razão de ser da biblioteca. Micro-otimizar
+a montagem dos 16 bytes não move o número.
 
 ---
 

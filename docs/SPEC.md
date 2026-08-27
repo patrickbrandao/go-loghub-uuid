@@ -57,6 +57,17 @@ A ordenação cronológica é garantida porque os bits de tempo ocupam as
 posições mais significativas: comparar dois UUIDs byte a byte equivale a
 compará-los no tempo.
 
+Com uma ressalva importante: a ordenação é cronológica **na resolução do
+nível**, com desempate **aleatório** dentro do mesmo instante embutido —
+não é monotonicidade estrita. Não há contador de desempate. Como gerar um
+UUID é mais rápido que o passo do relógio da maioria dos hosts, dois
+identificadores consecutivos frequentemente caem no mesmo instante e sua
+ordem relativa passa a ser aleatória. No Nível 1 isso vale para
+praticamente todo par consecutivo, porque a resolução é o milissegundo.
+Uma implementação que precise de monotonicidade estrita deve acrescentar
+um contador (RFC 9562, seção 6.2, método 1), ciente do custo de estado
+compartilhado.
+
 ---
 
 ## 3. Os três níveis
@@ -237,6 +248,21 @@ Mensagens de erro devem distinguir, no mínimo, "formato inválido".
   precisa tratar isso, mas deve documentar a possibilidade. Uma extensão
   opcional é manter monotonicidade por contador, ao custo de estado
   compartilhado.
+- O relógio pode estar ajustado para **antes da época Unix**. A
+  decomposição do instante deve garantir que os campos sub-milissegundo
+  permaneçam em 0..999 nesse caso (por exemplo, fixando o piso do
+  timestamp na própria época); aritmética com resto de números negativos
+  produz valores fora da faixa que corrompem o UUID silenciosamente.
+- Se a leitura do relógio for feita como um único inteiro de
+  nanossegundos com 64 bits, ela satura em 2262-04-11. Ler segundos e
+  fração do segundo em separado evita esse limite.
+- O analisador de string **jamais** pode ler fora dos limites da entrada,
+  qualquer que seja o conteúdo: ele recebe dado externo. Decodificar a
+  partir de deslocamentos fixos e conhecidos (em vez de percorrer a
+  string pulando separadores) elimina a classe inteira de erro.
+- A fonte de entropia deve ser validada na construção do gerador, não na
+  primeira geração; e um gerador obtido pelo valor zero do tipo não pode
+  derrubar o processo.
 
 ---
 
@@ -254,12 +280,28 @@ Mensagens de erro devem distinguir, no mínimo, "formato inválido".
    geração (com tolerância de 1 ms).
 5. **Strings inválidas**: tamanho errado, hifens errados ou dígitos não
    hexadecimais produzem erro de formato.
-6. **Ordenação**: UUIDs de Nível 3 gerados em sequência são, em larga
-   maioria, não decrescentes na comparação de string (regressões só
-   dentro do mesmo nanossegundo, por desempate aleatório).
+6. **Ordenação**: sempre que o instante embutido de B for maior que o de
+   A, a string de B tem de ser maior que a de A (e o binário também), nos
+   três níveis. Este é o teste correto. **Não** testar contando
+   "regressões em uma sequência fechada com limiar tolerado": isso mede a
+   resolução do relógio do host, não a biblioteca — sem contador de
+   desempate, a maioria dos pares consecutivos cai no mesmo instante e é
+   ordenada aleatoriamente. Se for desejável um teste sobre o relógio
+   real, inserir uma pausa maior que a resolução do relógio entre as
+   gerações e então exigir ordem estrita.
 7. **Concorrência**: gerar 1.000.000 de UUIDs distribuídos por centenas
    de threads não causa erro nem corrupção, e o resultado permanece
-   válido.
+   válido. A própria suíte deve estar limpa sob detector de corrida —
+   nada de sumidouro global escrito por várias threads.
+8. **Robustez do analisador**: nenhuma entrada de qualquer tamanho ou
+   conteúdo pode causar acesso fora dos limites. Cobrir, no mínimo, toda
+   mutação de um byte sobre uma string canônica válida (inclusive
+   separadores extras em posições inesperadas) e, se a linguagem
+   oferecer, uma campanha de *fuzzing*.
+9. **Bordas do gerador**: fonte de entropia nula rejeitada na
+   construção; gerador obtido pelo valor zero do tipo não derruba o
+   processo; níveis desconhecidos se comportam exatamente como o
+   Nível 1.
 
 ---
 
@@ -282,9 +324,8 @@ os resultados em uma variável "sumidouro").
 
 - **Raiz**: apenas o necessário para produção (código da biblioteca,
   manifesto de build, README, mapa do projeto, licença).
-- **Subpasta de documentação**: guias de uso rápido, uso completo e de
-  testes/benchmark.
-- **Subpasta de especificação**: este documento.
+- **Subpasta de documentação**: guias de uso rápido, uso completo, de
+  testes/benchmark e este documento.
 - **Subpasta de testes**: testes funcionais, benchmarks e um executável
   autônomo de benchmark em massa, todos importando a biblioteca pelo seu
   caminho público (como um consumidor externo faria).

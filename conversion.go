@@ -16,6 +16,11 @@ const hexDigits = "0123456789abcdef"
 //
 // A implementação escreve diretamente em um buffer de 36 bytes, sem
 // alocações intermediárias, para ser barata em caminhos quentes.
+//
+// Atenção: por UUID satisfazer fmt.Stringer, os verbos %x e %X do pacote
+// fmt formatam esta string — devolvendo 72 caracteres com o hexadecimal
+// do texto — e não os 16 bytes. Para imprimir os bytes, converta antes:
+// fmt.Printf("%x", u[:]).
 func (u UUID) String() string {
 	var buf [36]byte
 	j := 0
@@ -32,31 +37,34 @@ func (u UUID) String() string {
 	return string(buf[:])
 }
 
+// hexOffsets guarda o deslocamento, dentro da string canônica de 36
+// caracteres, do dígito hexadecimal mais alto de cada um dos 16 bytes.
+// Decodificar a partir de posições fixas elimina por construção qualquer
+// leitura fora dos limites e rejeita hifens fora do lugar (o hifen não é
+// dígito hexadecimal).
+var hexOffsets = [16]int{0, 2, 4, 6, 9, 11, 14, 16, 19, 21, 24, 26, 28, 30, 32, 34}
+
 // FromString interpreta uma string canônica de UUID e devolve o valor
 // binário de 128 bits. Aceita maiúsculas ou minúsculas. Retorna
 // ErrInvalidFormat se o tamanho, os hifens ou os dígitos forem inválidos.
+//
+// Em caso de erro o UUID devolvido é sempre o valor zero: nenhum byte
+// parcialmente decodificado vaza para o chamador.
 func FromString(s string) (UUID, error) {
 	var u UUID
 	if len(s) != 36 {
-		return u, ErrInvalidFormat
+		return UUID{}, ErrInvalidFormat
 	}
 	if s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-' {
-		return u, ErrInvalidFormat
+		return UUID{}, ErrInvalidFormat
 	}
-	j := 0
-	for i := 0; i < 36; {
-		if s[i] == '-' {
-			i++
-			continue
-		}
-		high, ok1 := fromHex(s[i])
-		low, ok2 := fromHex(s[i+1])
+	for j, p := range hexOffsets {
+		high, ok1 := fromHex(s[p])
+		low, ok2 := fromHex(s[p+1])
 		if !ok1 || !ok2 {
 			return UUID{}, ErrInvalidFormat
 		}
 		u[j] = high<<4 | low
-		j++
-		i += 2
 	}
 	return u, nil
 }

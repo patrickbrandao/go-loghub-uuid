@@ -69,7 +69,20 @@ g := uuid.NewGeneratorWith(cryptoBits)
 ```
 
 A função fornecida deve devolver 64 bits aleatórios e **ser segura para
-uso concorrente** (será chamada por várias goroutines).
+uso concorrente** (será chamada por várias goroutines). Ela é chamada uma
+vez por UUID nos níveis 2 e 3 e duas vezes no nível 1. Passar `nil` faz
+`NewGeneratorWith` entrar em pânico imediatamente, para que o erro de
+configuração apareça no boot.
+
+> **Quando isto deixa de ser opcional.** O gerador padrão usa PCG, um
+> PRNG estatístico e **não** criptográfico: a partir de poucas amostras
+> observadas é possível reconstruir o estado interno e prever os UUIDs
+> seguintes. Somado a isso, todo UUIDv7 revela o instante de criação por
+> construção. Se o identificador precisar ser inadivinhável — token de
+> sessão, link privado, chave de recuperação — o gerador com entropia
+> criptográfica acima é **requisito**, não conveniência. Para chave
+> primária, identificador de registro e correlação de log, o gerador
+> padrão é adequado.
 
 ---
 
@@ -108,8 +121,8 @@ s := uuid.BinaryToString(u)  // função equivalente
 ### String → binário
 
 ```go
-u, err := uuid.FromString(s)        // método de fábrica
-u, err := uuid.StringToBinary(s)    // função equivalente
+u, err := uuid.FromString(s) // método de fábrica
+// equivalente: u, err := uuid.StringToBinary(s)
 if err != nil {
 	// uuid.ErrInvalidFormat se a string não for canônica
 }
