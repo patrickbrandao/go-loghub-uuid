@@ -17,13 +17,17 @@ git remote set-url origin https://github.com/patrickbrandao/go-loghub-uuid.git;
 
 # Aplicar commit
 git commit -m "Update";
+git push -u origin main;
 
 # Cria a tag (o -f foi usado para sobrescrever a antiga);
 git tag -f v0.1.0;
+git tag -a v0.1.0 -m "Release version 0.1.0";
 
 # Envia a tag para o GitHub (o -f forcou a atualizacao remota)
 git push -f origin v0.1.0;
 git push origin v0.1.0;
+
+gh release create v0.1.0 --title "v0.1.0" --generate-notes;
 
 ```
 

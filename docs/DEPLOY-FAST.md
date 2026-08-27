@@ -25,8 +25,12 @@ import (
 func main() {
 	// Forma mais curta: funções de pacote usam um gerador padrão interno,
 	// já pronto e seguro para concorrência.
-	s := uuid.GenerateString(uuid.Level1) // só milissegundos (UUIDv7 padrão)
-	fmt.Println(s)                         // ex.: 019e99e3-42f0-7882-9719-2305ff84949c
+	s1 := uuid.GenerateString(uuid.Level1) // só milissegundos   (UUIDv7 padrão)
+	s2 := uuid.GenerateString(uuid.Level2) // ate microssegundos (UUIDv7 + rand_a)
+	s3 := uuid.GenerateString(uuid.Level3) // ate nanosegundos   (UUIDv7 ++ rand_a)
+	fmt.Println(s1)                        // ex.: 019e99e3-42f0-7882-9719-2305ff84949c
+	fmt.Println(s2)                        // ex.: 019e99e3-42f0-7882-9719-2305ff84949c
+	fmt.Println(s3)                        // ex.: 019e99e3-42f0-7882-9719-2305ff84949c
 }
 ```
 
@@ -61,3 +65,4 @@ tempo, sem trava global.
 
 Para todas as funções (binário, conversões, importação de tempo), veja
 [DEPLOY-FULL.md](DEPLOY-FULL.md).
+
