@@ -36,7 +36,7 @@ func TestRoundTripString(t *testing.T) {
 			t.Fatalf("FromString(%q) falhou: %v", s, err)
 		}
 		if back != original {
-			t.Fatalf("round-trip divergiu:\n  ant: %x\n  dep: %x", original, back)
+			t.Fatalf("round-trip divergiu:\n  ant: %x\n  dep: %x", original[:], back[:])
 		}
 	}
 }
@@ -48,7 +48,7 @@ func TestConversionAliases(t *testing.T) {
 	s := uuid.BinaryToString(u)
 	v, err := uuid.StringToBinary(s)
 	if err != nil || v != u {
-		t.Fatalf("apelidos de conversão divergiram: err=%v v=%x u=%x", err, v, u)
+		t.Fatalf("apelidos de conversão divergiram: err=%v v=%x u=%x", err, v[:], u[:])
 	}
 }
 
@@ -101,23 +101,34 @@ func TestImportLevel3(t *testing.T) {
 	}
 }
 
-// TestMonotonicity confere que UUIDs de nível 3 gerados em sequência
-// tendem a ser ordenáveis no tempo (a string de um posterior >= anterior
-// quando o relógio avança).
+// TestMonotonicity confere a garantia real da biblioteca: quando o
+// relógio avança entre duas gerações, a string do UUID posterior é
+// estritamente maior que a do anterior.
+//
+// A versão anterior deste teste gerava 5.000 UUIDs em sequência fechada e
+// tolerava no máximo 50 regressões. Isso media a resolução do relógio do
+// host, e não a biblioteca: gerar um UUID custa ~45 ns, bem menos que o
+// passo do relógio, então a maioria dos pares consecutivos cai no mesmo
+// instante embutido e é desempatada por bits aleatórios — não existe
+// contador monotônico. Em hosts com relógio de microssegundo (macOS) o
+// teste falhava sempre, com ~2.000 regressões.
+//
+// A pausa entre gerações garante que o instante embutido avance em todos
+// os hosts. Para a invariante de ordenação medida sem depender do
+// relógio, ver TestOrderingFollowsEmbeddedTime; para o diagnóstico da
+// taxa de empates, ver TestTieRateReport (ambos em ordering_test.go).
 func TestMonotonicity(t *testing.T) {
 	g := uuid.NewGenerator()
 	previous := g.GenerateString(uuid.Level3)
-	regressions := 0
-	for i := 0; i < 5_000; i++ {
+	for i := 0; i < 200; i++ {
+		// 200 µs: acima da resolução do relógio de qualquer host suportado,
+		// e o nível 3 registra microssegundos, logo a chave de tempo avança.
+		time.Sleep(200 * time.Microsecond)
 		current := g.GenerateString(uuid.Level3)
-		if current < previous {
-			regressions++
+		if current <= previous {
+			t.Fatalf("iteração %d: o relógio avançou mas a ordenação regrediu:\n  ant: %s\n  dep: %s",
+				i, previous, current)
 		}
 		previous = current
-	}
-	// Pequenas regressões podem ocorrer dentro do mesmo nanossegundo
-	// (desempate aleatório); exigimos que sejam raras.
-	if regressions > 50 {
-		t.Fatalf("muitas regressões de ordenação: %d", regressions)
 	}
 }
