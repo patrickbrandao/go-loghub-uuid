@@ -19,15 +19,14 @@ git remote set-url origin https://github.com/patrickbrandao/go-loghub-uuid.git;
 git commit -m "Update";
 git push -u origin main;
 
-# Cria a tag (o -f foi usado para sobrescrever a antiga);
-git tag -f v0.1.0;
-git tag -a v0.1.0 -m "Release version 0.1.0";
+# Cria a tag anotada para a nova versão (tags publicadas são imutáveis;
+# nunca sobrescreva tags com -f para não quebrar o sum.golang.org dos usuários)
+git tag -a v0.3.0 -m "Release version 0.3.0";
 
-# Envia a tag para o GitHub (o -f forcou a atualizacao remota)
-git push -f origin v0.1.0;
-git push origin v0.1.0;
+# Envia a tag para o GitHub
+git push origin v0.3.0;
 
-gh release create v0.1.0 --title "v0.1.0" --generate-notes;
+gh release create v0.3.0 --title "v0.3.0" --generate-notes;
 
 ```
 

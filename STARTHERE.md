@@ -9,8 +9,13 @@ de bits, níveis e onde encontrar cada coisa.
 
 Biblioteca Go para gerar **UUIDv7** (RFC 9562) com **três níveis** de
 precisão temporal, converter entre string e binário e importar as
-propriedades de tempo. Sem dependências externas; segura para
-concorrência; otimizada para alto throughput.
+propriedades de tempo. Gera também **todas as demais versões** da RFC
+9562 — 1, 2, 3, 4, 5, 6 e 8 — e traz análise permissiva de texto,
+serialização em JSON e integração com `database/sql`.
+
+Sem dependências externas; segura para concorrência; otimizada para alto
+throughput. O caminho do UUIDv7 continua sem trava e sem alocações: tudo
+que foi acrescentado vive em arquivos próprios e não o atravessa.
 
 ---
 
@@ -21,19 +26,38 @@ go-loghub-uuid/
 │
 ├── go.mod                  # módulo: github.com/patrickbrandao/go-loghub-uuid
 │
-├── uuid.go                 # PRODUÇÃO: tipos, Generator, geração por nível
-├── conversion.go           # PRODUÇÃO: String()/FromString + apelidos de conversão
-├── import.go               # PRODUÇÃO: Time, Import, ImportBinary
+│   # PRODUÇÃO — núcleo do UUIDv7 (caminho quente, sem trava, sem alocação)
+├── uuid.go                 # tipos, Generator, geração por nível
+├── conversion.go           # String()/FromString + apelidos de conversão
+├── import.go               # Time, Import, ImportBinary
+│
+│   # PRODUÇÃO — demais versões de UUID
+├── clock.go                # relógio gregoriano, sequência e nó (versões 1, 2, 6)
+├── version1.go             # GenerateV1 e GenerateV6
+├── version2.go             # Domain, GenerateV2 e atalhos DCE
+├── namebased.go            # espaços de nomes, GenerateV3 e GenerateV5
+├── version4.go             # GenerateV4
+├── version8.go             # GenerateV8
+│
+│   # PRODUÇÃO — API de apoio
+├── parse.go                # Parse permissivo, Validate, FromBytes, MustParse
+├── values.go               # Nil, Max, Compare, URN, UUIDs, descrições em texto
+├── encoding.go             # MarshalText/Binary e as leituras correspondentes
+├── sql.go                  # Scan, Value e NullUUID
+├── inspect.go              # Timestamp, GregorianTime, ClockSequence, NodeID
+├── entropy.go              # NewGeneratorWithReader e NewCryptoGenerator
+├── compat.go               # apelidos com os nomes do pacote google/uuid
+├── clock_internal_test.go  # teste interno das funções puras de relógio (único teste na raiz)
 │
 ├── README.md               # descrição rápida + uso rápido
 ├── STARTHERE.md            # este mapa
 ├── LICENSE                 # MIT
 ├── CLAUDE.md               # instruções de manutenção (ferramental)
-├── PROMPT.md               # requisitos originais do projeto
 │
 ├── docs/                   # documentação de uso
 │   ├── DEPLOY-FAST.md
 │   ├── DEPLOY-FULL.md
+│   ├── MIGRATION.md        # vindo do pacote github.com/google/uuid
 │   ├── TEST-AND-BENCHMARK.md
 │   ├── SPEC.md             # como reimplementar do zero (sem código)
 │   └── git.md
@@ -41,27 +65,31 @@ go-loghub-uuid/
 └── tests/                  # tudo que NÃO vai para produção
     ├── doc.go
     ├── generation_test.go      # testes funcionais
+    ├── versions_test.go        # versões 1 a 8, tempo, nó e sequência
+    ├── api_test.go             # análise, serialização, SQL e apelidos
     ├── parsing_test.go         # robustez de FromString/String
     ├── layout_test.go          # layout de bits com entropia determinística
     ├── import_test.go          # extração das propriedades de tempo
     ├── ordering_test.go        # ordenação, unicidade e concorrência
     ├── robustness_test.go      # bordas do Generator e consumo de entropia
     ├── alloc_test.go           # trava de zero alocações
-    ├── fuzz_test.go            # FuzzFromString
+    ├── fuzz_test.go            # FuzzFromString e FuzzParse
     ├── benchmark_test.go       # benchmarks + massa de 1.000.000
     └── benchmark-bulk/
         └── main.go             # executável: go run ./tests/benchmark-bulk
 ```
 
 A **raiz** contém apenas o necessário para usar a biblioteca em produção
-(os três `.go`, o `go.mod`, README/STARTHERE/LICENSE) mais os dois
-arquivos de suporte ao desenvolvimento (`CLAUDE.md`, `PROMPT.md`).
-Documentação, especificação, relatórios e testes ficam em pastas
-próprias.
+(os arquivos `.go`, o `go.mod`, README/STARTHERE/LICENSE) mais o arquivo
+de suporte ao desenvolvimento (`CLAUDE.md`) e o teste interno de funções
+puras do relógio (`clock_internal_test.go`). Documentação,
+especificação, relatórios e testes ficam em pastas próprias.
 
 ---
 
 ## 3. API pública (pacote `loghubuuid`)
+
+### 3.1 Núcleo do UUIDv7
 
 **Tipos**
 - `Level` — `Level1`, `Level2`, `Level3`.
@@ -74,6 +102,9 @@ próprias.
 - `NewGeneratorWith(source func() uint64) *Generator` — entropia
   personalizada; `source` precisa ser segura para concorrência e entra em
   pânico se for `nil`.
+- `NewGeneratorWithReader(r io.Reader) *Generator` — entropia a partir de
+  um `io.Reader` seguro para concorrência.
+- `NewCryptoGenerator() *Generator` — entropia de `crypto/rand`.
 
 > O gerador padrão usa PCG, um PRNG **estatístico**, não criptográfico:
 > não use estes UUIDs como segredo. Ver a seção "Aviso de segurança" do
@@ -95,14 +126,89 @@ próprias.
 - `Import(string) (Time, error)`
 - `ImportBinary(UUID) Time`
 
-**Inspeção**
-- `(UUID) Version() byte` — 7
-- `(UUID) Variant() byte` — 2 (binário `10`)
+### 3.2 Demais versões de UUID
 
-**Erros**
+- `GenerateV1() UUID` — tempo gregoriano, sequência e nó.
+- `GenerateV2(Domain, uint32) UUID` — DCE Security.
+- `GenerateV2Person() UUID`, `GenerateV2Group() UUID` — atalhos que usam
+  o usuário e o grupo do processo.
+- `GenerateV3(space UUID, name []byte) UUID` — MD5, determinística.
+- `(*Generator) GenerateV4() UUID` e `GenerateV4() UUID` — aleatória.
+- `GenerateV5(space UUID, name []byte) UUID` — SHA-1, determinística.
+- `GenerateHash(h hash.Hash, space UUID, name []byte, version byte) UUID`
+- `GenerateV6() UUID` — versão 1 com tempo reordenado, ordenável.
+- `GenerateV8(data [16]byte) UUID`, `(*Generator) GenerateV8() UUID`,
+  `GenerateV8Random() UUID` — 122 bits livres.
+
+**Tipos e estado de apoio**
+- `Domain` — `Person`, `Group`, `Org`.
+- `NameSpaceDNS`, `NameSpaceURL`, `NameSpaceOID`, `NameSpaceX500`.
+- `NodeID() []byte`, `SetNodeID([]byte) bool`.
+- `ClockSequence() int`, `SetClockSequence(int)`.
+- `GetTime() (GregorianTime, uint16)` — o `uint16` traz os 14 bits da
+  sequência com os 2 bits de variante já posicionados (`0x8000`).
+
+As versões 1, 2 e 6 compartilham um relógio interno protegido por trava
+própria, independente do caminho do UUIDv7.
+
+### 3.3 Análise de texto
+
+- `Parse(string) (UUID, error)` — aceita a forma canônica, entre chaves,
+  com prefixo `urn:uuid:` e hexadecimal cru de 32 dígitos.
+- `ParseBytes([]byte) (UUID, error)` — o mesmo, sem alocar.
+- `MustParse(string) UUID`, `Must(UUID, error) UUID`.
+- `Validate(string) error`.
+- `FromBytes([]byte) (UUID, error)` — 16 bytes crus.
+
+`FromString` **não mudou**: continua aceitando somente a forma canônica.
+
+### 3.4 Serialização e banco de dados
+
+- `(UUID) MarshalText`, `(*UUID) UnmarshalText`
+- `(UUID) MarshalBinary`, `(*UUID) UnmarshalBinary`
+- `(*UUID) Scan(any) error`, `(UUID) Value() (driver.Value, error)`
+- `NullUUID` — coluna que aceita `NULL`, com `Scan`, `Value` e as
+  serializações em JSON, texto e binário.
+
+> **Mudança de formato de dados.** Com `MarshalText` presente, o
+> `encoding/json` passa a gravar um UUID como string canônica. Antes ele
+> gravava uma lista de 16 números, por ser um vetor de bytes. O mesmo
+> vale para `encoding/gob`.
+
+### 3.5 Inspeção
+
+- `(UUID) Version() byte` — o número da versão.
+- `(UUID) Variant() byte` — 2 (binário `10`) para a variante RFC.
+- `(UUID) Timestamp() (time.Time, bool)` — versões 1, 6 e 7.
+- `(UUID) TimestampWithLevel(Level) (time.Time, bool)` — recupera a
+  precisão sub-milissegundo dos níveis 2 e 3.
+- `(UUID) GregorianTime() (GregorianTime, bool)` — versões 1 e 6.
+- `(UUID) ClockSequence() (int, bool)`, `(UUID) NodeID() []byte`
+- `(UUID) Domain() (Domain, bool)`, `(UUID) ID() (uint32, bool)`
+- `(UUID) IsZero() bool`, `(UUID) IsMax() bool`
+- `(UUID) Compare(UUID) int`, `(UUID) URN() string`
+- `Nil`, `Max`, `UUIDs` com `Strings() []string`
+- `VersionString(byte) string`, `VariantString(byte) string`
+
+### 3.6 Compatibilidade com github.com/google/uuid
+
+`compat.go` reproduz os nomes e as assinaturas do pacote do Google:
+`New`, `NewString`, `NewRandom`, `NewRandomFromReader`, `NewUUID`,
+`NewV6`, `NewV7`, `NewV7FromReader`, `NewMD5`, `NewSHA1`, `NewHash`,
+`NewDCESecurity`, `NewDCEPerson`, `NewDCEGroup`. Veja
+[docs/MIGRATION.md](docs/MIGRATION.md).
+
+### 3.7 Erros
+
 - `ErrInvalidFormat` — string de UUID em formato inválido.
+- `ErrInvalidLength` — comprimento incompatível; embrulha o anterior.
+- `ErrInvalidBrackets` — forma entre chaves malformada; idem.
+- `ErrInvalidScanType` — tipo não suportado em `Scan`.
+- `ErrEntropySource` — falha ao ler da fonte de entropia do chamador.
+- `IsInvalidLengthError(error) bool`.
 
----
+Todos os erros de formato continuam reconhecíveis por
+`errors.Is(err, ErrInvalidFormat)`.
 
 ## 4. Layout de bits (128 bits, big-endian)
 
@@ -142,6 +248,9 @@ por string continua cronológica.
   [docs/SPEC.md](docs/SPEC.md)
 - **Quero ler o código**: comece por `uuid.go` (geração), depois
   `conversion.go` e `import.go`.
+- **Quero as outras versões**: `clock.go` primeiro (o relógio
+  compartilhado), depois `version1.go`.
+- **Venho do pacote google/uuid**: [docs/MIGRATION.md](docs/MIGRATION.md)
 
 ---
 

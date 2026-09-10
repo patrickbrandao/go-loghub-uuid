@@ -60,3 +60,50 @@ func TestImportZeroAllocations(t *testing.T) {
 
 // sinkT evita que o compilador elimine as chamadas de importação.
 var sinkT uuid.Time
+
+// TestGenerateV4ZeroAllocations estende a trava de zero alocações ao
+// gerador de versão 4, que compartilha a mesma fonte de entropia.
+func TestGenerateV4ZeroAllocations(t *testing.T) {
+	g := uuid.NewGenerator()
+	allocs := testing.AllocsPerRun(1_000, func() {
+		sinkU = g.GenerateV4()
+	})
+	if allocs != 0 {
+		t.Errorf("GenerateV4: %.0f alocações por chamada, esperado 0", allocs)
+	}
+}
+
+// TestTimeBasedZeroAllocations confere que as versões 1, 2 e 6 também
+// escrevem direto no valor de retorno, sem escapar para o heap.
+func TestTimeBasedZeroAllocations(t *testing.T) {
+	cases := map[string]func() uuid.UUID{
+		"GenerateV1": uuid.GenerateV1,
+		"GenerateV6": uuid.GenerateV6,
+		"GenerateV2": func() uuid.UUID { return uuid.GenerateV2(uuid.Org, 1) },
+	}
+	for name, generate := range cases {
+		allocs := testing.AllocsPerRun(1_000, func() {
+			sinkU = generate()
+		})
+		if allocs != 0 {
+			t.Errorf("%s: %.0f alocações por chamada, esperado 0", name, allocs)
+		}
+	}
+}
+
+// TestParseZeroAllocations confere que o analisador permissivo não paga
+// alocação em nenhum dos quatro formatos, nem a partir de bytes.
+func TestParseZeroAllocations(t *testing.T) {
+	raw := []byte(canonical)
+	cases := map[string]func(){
+		"Parse canônico":     func() { sinkU, _ = uuid.Parse(canonical) },
+		"Parse entre chaves": func() { sinkU, _ = uuid.Parse("{" + canonical + "}") },
+		"Parse URN":          func() { sinkU, _ = uuid.Parse("urn:uuid:" + canonical) },
+		"ParseBytes":         func() { sinkU, _ = uuid.ParseBytes(raw) },
+	}
+	for name, call := range cases {
+		if allocs := testing.AllocsPerRun(1_000, call); allocs != 0 {
+			t.Errorf("%s: %.0f alocações por chamada, esperado 0", name, allocs)
+		}
+	}
+}

@@ -19,10 +19,45 @@ Cobrem versão/variante, round-trip de conversão, faixas de micro/nano,
 coerência da importação, rejeição de strings inválidas, ordenação e
 concorrência.
 
+Cobrem também as demais versões de UUID: os bits de versão e variante de
+cada uma, os vetores de teste da RFC 9562 para as versões 3 e 5, a
+ordenação da versão 6, o adiantamento do relógio compartilhado, a análise
+permissiva de texto nos quatro formatos, a serialização em JSON e
+binário, a integração com `database/sql` e os apelidos de
+compatibilidade.
+
+Para rodar apenas um desses grupos:
+
+```bash
+go test ./tests/ -run 'TestAllVersions|TestNameBased|TestTimestamp' -v   # versoes
+go test ./tests/ -run 'TestParse|TestJSON|TestSQL|TestCompatibility' -v  # API de apoio
+```
+
 Modo rápido (pula os testes de massa de 1 milhão):
 
 ```bash
 go test ./tests/ -short -v
+```
+
+### Detector de corrida (race detector)
+
+A biblioteca é concorrente por projeto. A suíte inteira deve passar sob
+o detector de corrida sem registrar alertas:
+
+```bash
+go test ./... -race
+```
+
+### Fuzzing
+
+Cobrem mutações e entradas arbitrárias contra o parser:
+
+```bash
+# Fuzz do analisador estrito
+go test ./tests/ -run '^$' -fuzz FuzzFromString -fuzztime 60s
+
+# Fuzz do analisador permissivo (quatro formatos)
+go test ./tests/ -run '^$' -fuzz FuzzParse -fuzztime 60s
 ```
 
 ---
@@ -38,6 +73,20 @@ Mede nanossegundos por operação e alocações:
 - `BenchmarkGenerateLevel1/2/3` — geração binária por nível.
 - `BenchmarkGenerateStringLevel1/3` — geração com serialização em string.
 - `BenchmarkGenerateLevel3Parallel` — throughput com várias goroutines.
+- `BenchmarkGenerateV1/V4/V5/V6` — as demais versões de UUID.
+- `BenchmarkGenerateV1Parallel` — custo do lock compartilhado pelas
+  versões 1, 2 e 6, em contraste com o UUIDv7, que não tem lock.
+- `BenchmarkParse` — análise permissiva no formato canônico.
+
+O caminho do UUIDv7 não foi tocado pela inclusão das outras versões. Para
+conferir isso em uma máquina qualquer, compare os benchmarks do UUIDv7
+antes e depois de uma alteração, com o coletor de lixo desligado para
+reduzir o ruído:
+
+```bash
+GOGC=off GOMAXPROCS=4 go test ./tests/ -run '^$' \
+  -bench 'BenchmarkGenerateLevel3' -benchtime 5000000x -count 6
+```
 
 ---
 
@@ -82,26 +131,26 @@ nível, em binário e string.
 
 Benchmark (`go test ./tests/ -run '^$' -bench Benchmark -benchmem -benchtime=2s`):
 
-| Benchmark                       | ns/op | alloc/op | bytes/op |
-|---------------------------------|------:|---------:|---------:|
-| `GenerateLevel1` (binário)      | ~43,5 | 0        | 0        |
-| `GenerateLevel2` (binário)      | ~41,1 | 0        | 0        |
-| `GenerateLevel3` (binário)      | ~42,0 | 0        | 0        |
-| `GenerateStringLevel1`          | ~67,9 | 1        | 48       |
-| `GenerateStringLevel3`          | ~64,4 | 1        | 48       |
-| `GenerateLevel3Parallel`        | ~9,7  | 0        | 0        |
-| `FromString`                    | ~31,6 | 0        | 0        |
+| Benchmark                  | ns/op | alloc/op | bytes/op |
+| -------------------------- | ----: | -------: | -------: |
+| `GenerateLevel1` (binário) | ~43,5 |        0 |        0 |
+| `GenerateLevel2` (binário) | ~41,1 |        0 |        0 |
+| `GenerateLevel3` (binário) | ~42,0 |        0 |        0 |
+| `GenerateStringLevel1`     | ~67,9 |        1 |       48 |
+| `GenerateStringLevel3`     | ~64,4 |        1 |       48 |
+| `GenerateLevel3Parallel`   |  ~9,7 |        0 |        0 |
+| `FromString`               | ~31,6 |        0 |        0 |
 
 Geração em massa de 1.000.000 (`go run ./tests/benchmark-bulk`):
 
-| Cenário            | Tempo total | ns/UUID | UUIDs/ms |
-|--------------------|------------:|--------:|---------:|
-| Nível 1 (binário)  | ~52 ms      | ~52     | ~19.100  |
-| Nível 2 (binário)  | ~41 ms      | ~41     | ~24.500  |
-| Nível 3 (binário)  | ~41 ms      | ~41     | ~24.300  |
-| Nível 1 (string)   | ~68 ms      | ~68     | ~14.600  |
-| Nível 2 (string)   | ~65 ms      | ~65     | ~15.400  |
-| Nível 3 (string)   | ~69 ms      | ~69     | ~14.400  |
+| Cenário           | Tempo total | ns/UUID | UUIDs/ms |
+| ----------------- | ----------: | ------: | -------: |
+| Nível 1 (binário) |      ~52 ms |     ~52 |  ~19.100 |
+| Nível 2 (binário) |      ~41 ms |     ~41 |  ~24.500 |
+| Nível 3 (binário) |      ~41 ms |     ~41 |  ~24.300 |
+| Nível 1 (string)  |      ~68 ms |     ~68 |  ~14.600 |
+| Nível 2 (string)  |      ~65 ms |     ~65 |  ~15.400 |
+| Nível 3 (string)  |      ~69 ms |     ~69 |  ~14.400 |
 
 Concorrente (1.000.000 de Nível 3 em 256 goroutines): ~7,8 ms,
 ~128.000 UUIDs/ms agregados.
@@ -118,14 +167,14 @@ de um sorteio extra.
 Piso de referência para máquinas lentas (números da revisão anterior,
 medidos sem aquecimento — leia o Nível 1 com essa ressalva):
 
-| Cenário            | Tempo total | ns/UUID | UUIDs/ms |
-|--------------------|------------:|--------:|---------:|
-| Nível 1 (binário)  | ~90 ms      | ~90     | ~11.100  |
-| Nível 2 (binário)  | ~88 ms      | ~88     | ~11.330  |
-| Nível 3 (binário)  | ~88 ms      | ~88     | ~11.370  |
-| Nível 1 (string)   | ~165 ms     | ~165    | ~6.060   |
-| Nível 2 (string)   | ~163 ms     | ~163    | ~6.120   |
-| Nível 3 (string)   | ~165 ms     | ~165    | ~6.045   |
+| Cenário           | Tempo total | ns/UUID | UUIDs/ms |
+| ----------------- | ----------: | ------: | -------: |
+| Nível 1 (binário) |      ~90 ms |     ~90 |  ~11.100 |
+| Nível 2 (binário) |      ~88 ms |     ~88 |  ~11.330 |
+| Nível 3 (binário) |      ~88 ms |     ~88 |  ~11.370 |
+| Nível 1 (string)  |     ~165 ms |    ~165 |   ~6.060 |
+| Nível 2 (string)  |     ~163 ms |    ~163 |   ~6.120 |
+| Nível 3 (string)  |     ~165 ms |    ~165 |   ~6.045 |
 
 Leitura dos números: a geração binária custa **dezenas de
 nanossegundos** e **zero alocações**; passa de **11 mil UUIDs por

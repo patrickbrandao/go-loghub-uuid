@@ -1,331 +1,419 @@
-# Especificação de Desenvolvimento — Biblioteca UUIDv7 Multinível
+# Especificação de Desenvolvimento — Biblioteca UUID Completa e Multinível (RFC 9562)
 
 > Documento de implementação **agnóstico de linguagem**. Descreve, sem
-> código, tudo o que é necessário para construir a biblioteca do zero em
-> qualquer linguagem (Go, Rust, C, Java, Python, etc.). Um modelo de IA
-> ou um desenvolvedor deve conseguir produzir uma implementação completa
-> e correta seguindo apenas este texto.
+> depender de bibliotecas externas ou de recursos exclusivos do Go, tudo
+> o que é necessário para construir a biblioteca do zero em qualquer
+> linguagem (Go, Rust, C, C++, Java, C#, Python, etc.).
+>
+> Um desenvolvedor ou modelo de IA deve conseguir produzir uma
+> implementação completa, interoperável, de alto desempenho e
+> estritamente correta seguindo apenas este texto — **sem cometer
+> nenhum dos erros históricos já encontrados e corrigidos neste projeto**.
 
 ---
 
-## 1. Objetivo
+## 1. Objetivo e Escopo da Biblioteca
 
-Construir uma biblioteca leve e rápida para **gerar, converter e
-interpretar** identificadores **UUIDv7** (RFC 9562), com **três níveis**
-de precisão temporal embutida. A biblioteca deve:
+Construir uma biblioteca leve, de altíssimo desempenho (dezenas de
+nanossegundos por identificador, zero alocações de heap no caminho
+quente) e segura para concorrência pesada, cobrindo todo o padrão
+**RFC 9562** com extensão de precisão temporal sub-milissegundo:
 
-- Gerar UUIDv7 do nível desejado, tanto em **binário (128 bits)** quanto
-  em **string canônica**.
-- Converter entre **string** e **binário** nos dois sentidos.
-- **Importar** as propriedades de tempo de um UUID (segundos,
-  milissegundos, microssegundos, nanossegundos).
-- Ser **segura para concorrência** (um objeto criado no boot, usado por
-  centenas de threads) e capaz de gerar **milhares de identificadores
-  por milissegundo**.
-
----
-
-## 2. Conceitos do UUIDv7
-
-Um UUID tem **128 bits** = **16 bytes**, escritos em ordem de rede
-(big-endian: o byte 0 é o mais significativo). A representação canônica
-em texto tem **36 caracteres**: 32 dígitos hexadecimais minúsculos
-agrupados como **8-4-4-4-12** e separados por hifens.
-
-O UUIDv7 organiza esses 128 bits assim (numeração de bits da esquerda,
-mais significativo, para a direita):
-
-| Campo         | Tamanho | Posição (bits) | Conteúdo no padrão                          |
-|---------------|---------|----------------|---------------------------------------------|
-| `unix_ts_ms`  | 48 bits | 0–47           | Milissegundos desde a época Unix (UTC)      |
-| `ver`         | 4 bits  | 48–51          | Versão, valor fixo **7** (binário `0111`)   |
-| `rand_a`      | 12 bits | 52–63          | Aleatório no padrão                          |
-| `var`         | 2 bits  | 64–65          | Variante, valor fixo **`10`** (binário)     |
-| `rand_b`      | 62 bits | 66–127         | Aleatório no padrão                          |
-
-Mapeando para os 16 bytes:
-
-- **bytes 0..5** → `unix_ts_ms` (48 bits).
-- **byte 6** → nibble alto = `ver` (`0x7`); nibble baixo = 4 bits mais
-  altos de `rand_a`.
-- **byte 7** → 8 bits baixos de `rand_a` (totalizando 12 bits).
-- **byte 8** → 2 bits mais altos = `var` (`10`); 6 bits baixos = 6 bits
-  mais altos de `rand_b`.
-- **bytes 9..15** → 56 bits restantes de `rand_b` (totalizando 62 bits).
-
-A ordenação cronológica é garantida porque os bits de tempo ocupam as
-posições mais significativas: comparar dois UUIDs byte a byte equivale a
-compará-los no tempo.
-
-Com uma ressalva importante: a ordenação é cronológica **na resolução do
-nível**, com desempate **aleatório** dentro do mesmo instante embutido —
-não é monotonicidade estrita. Não há contador de desempate. Como gerar um
-UUID é mais rápido que o passo do relógio da maioria dos hosts, dois
-identificadores consecutivos frequentemente caem no mesmo instante e sua
-ordem relativa passa a ser aleatória. No Nível 1 isso vale para
-praticamente todo par consecutivo, porque a resolução é o milissegundo.
-Uma implementação que precise de monotonicidade estrita deve acrescentar
-um contador (RFC 9562, seção 6.2, método 1), ciente do custo de estado
-compartilhado.
+1. **UUIDv7 Multinível**:
+   - **Nível 1**: UUIDv7 padrão RFC 9562 com carimbo de milissegundos
+     Unix e 74 bits de entropia.
+   - **Nível 2**: UUIDv7 com carimbo de milissegundos e
+     **microssegundos** embutidos em `rand_a` (62 bits de entropia).
+   - **Nível 3**: UUIDv7 com carimbo de milissegundos,
+     **microssegundos** em `rand_a` e **nanossegundos** no topo de
+     `rand_b` (52 bits de entropia).
+2. **Todas as demais versões da RFC 9562**:
+   - **Versão 1**: Baseada em carimbo de tempo gregoriano (100 ns desde
+     1582), sequência de relógio de 14 bits e nó MAC/aleatório de 48 bits.
+   - **Versão 2**: DCE 1.1 Security, associando domínio de segurança
+     (Pessoa, Grupo, Org) e identificador local de 32 bits a um carimbo
+     gregoriano.
+   - **Versão 3**: Baseada em hash MD5 sobre um espaço de nomes e nome.
+   - **Versão 4**: 122 bits puramente aleatórios.
+   - **Versão 5**: Baseada em hash SHA-1 sobre um espaço de nomes e nome.
+   - **Versão 6**: Tempo gregoriano reordenado para ordenação k-sortable.
+   - **Versão 8**: Formato livre / personalizado ou 122 bits aleatórios.
+3. **Conversão e Análise (Parsing) Segura**:
+   - Analisador estrito: formato canônico `8-4-4-4-12`.
+   - Analisador permissivo: 4 formatos aceitos (canônico com hífens, sem
+     hífens com 32 dígitos, entre chaves `{...}`, e prefixo URN
+     `urn:uuid:...`).
+   - Algoritmo de parsing imune a pânicos e leituras fora dos limites
+     (out-of-bounds).
+4. **Inspeção e Extração**:
+   - Extração de versão, variante, instante temporal (Unix/Gregorian),
+     sequência de relógio, nó de rede, domínio e ID local.
+5. **Serialização e Integração**:
+   - Serialização de texto e JSON como string canônica entre aspas.
+   - Suporte a identificadores nulos em banco de dados (`NullUUID`).
+   - Operações de ordenação lexicográfica e constantes `Nil` e `Max`.
 
 ---
 
-## 3. Os três níveis
+## 2. Conceitos Gerais e Layout de Bits
 
-A biblioteca aproveita os campos `rand_a` e `rand_b` para guardar
-precisão **sub-milissegundo**, sempre preservando `ver=7` e `var=10`.
+Um UUID é composto exatamente por **128 bits** = **16 bytes**, dispostos
+em ordem de rede (*big-endian*, byte 0 mais significativo).
 
-Decomposição do instante de criação:
+### 2.1 Campos Fixos Universais (RFC 9562)
 
-- `unix_ts_ms` = nanossegundos_desde_epoch ÷ 1.000.000.
-- resto_sub_ms = nanossegundos_desde_epoch **mod** 1.000.000 (faixa
-  0..999.999).
-- **microssegundos** = resto_sub_ms ÷ 1.000 (faixa **0..999**).
-- **nanossegundos** = resto_sub_ms **mod** 1.000 (faixa **0..999**).
+Em qualquer versão do padrão, dois campos são invioláveis:
 
-### Nível 1 — só milissegundos
-- `rand_a` (12 bits): **aleatório**.
-- `rand_b` (62 bits): **aleatório**.
-- É o UUIDv7 padrão, 100% compatível com a RFC.
+- **Versão (`ver`, 4 bits)**: Ocupa o nibble mais alto do **byte 6**
+  (bits 48 a 51 do UUID). Valores válidos: `1` a `8`.
+- **Variante (`var`, 2 bits)**: Ocupa os 2 bits mais significativos do
+  **byte 8** (bits 64 e 65 do UUID). O padrão RFC 9562 exige variante
+  `10` em binário (`0b10` nos bits superiores, correspondendo à máscara
+  `0x80` ou nibble alto `8`, `9`, `A` ou `B`).
 
-### Nível 2 — + microssegundos
-- `rand_a` (12 bits): recebe o valor **microssegundos** (0..999). Como
-  999 cabe em 10 bits, os 12 bits acomodam o valor diretamente, com os 2
-  bits superiores em zero.
-- `rand_b` (62 bits): **aleatório**.
+### 2.2 Representação Canônica em Texto
 
-### Nível 3 — + microssegundos e nanossegundos
-- `rand_a` (12 bits): recebe **microssegundos** (0..999), igual ao nível 2.
-- `rand_b` (62 bits): os **10 bits mais altos** (bits 66–75 do UUID, ou
-  seja, os 6 bits baixos do byte 8 mais os 4 bits altos do byte 9)
-  recebem **nanossegundos** (0..999); os **52 bits restantes** são
-  **aleatórios**.
+Consiste em **36 caracteres** hexadecimais minúsculos agrupados como
+**`8-4-4-4-12`** com hifens nas posições 8, 13, 18 e 23 (índices
+iniciados em zero):
 
-Como microssegundos ocupam `rand_a` (logo após os milissegundos) e
-nanossegundos ocupam o topo de `rand_b`, a ordenação cronológica
-permanece válida até a resolução de nanossegundo, com desempate
-aleatório.
-
-> Observação: a resolução real de nanossegundos depende do relógio do
-> sistema operacional. A biblioteca grava o que o relógio fornece; em
-> plataformas com granularidade mais grossa, o dígito de nanossegundo
-> pode ser menos preciso, sem afetar a validade do UUID.
+```text
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|   time_low    | - | time_mid  | - |ver|time_hi| - |var|clk_seq| - |   node    |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
 
 ---
 
-## 4. Algoritmo de geração
+## 3. Especificação Detalhada do UUIDv7 Multinível
 
-Entrada: o nível desejado. Saída: 16 bytes.
+O UUIDv7 dedica os 48 bits iniciais ao carimbo Unix em milissegundos,
+garantindo ordenação temporal natural por comparação byte a byte.
 
-1. **Ler o relógio** em nanossegundos desde a época Unix (UTC).
-2. Calcular `unix_ts_ms`, `microssegundos` e `nanossegundos` conforme a
-   Seção 3.
-3. Obter dois blocos de **64 bits aleatórios** (chamados aqui `r1` e
-   `r2`) da fonte de entropia.
-4. **Gravar `unix_ts_ms`** nos bytes 0..5 (big-endian, 48 bits).
-5. **Montar `rand_a` (12 bits)**:
-   - Níveis 2 e 3: `rand_a = microssegundos` (limitado a 12 bits).
-   - Nível 1: `rand_a` = 12 bits baixos de `r1`.
-6. Gravar **byte 6** = `0x70` **OU** os 4 bits altos de `rand_a`.
-   Gravar **byte 7** = 8 bits baixos de `rand_a`.
-7. **Montar `rand_b` (62 bits)**:
-   - Nível 3: `rand_b` = (`nanossegundos` limitado a 10 bits, deslocado
-     52 bits à esquerda) **OU** (52 bits baixos de `r2`).
-   - Níveis 1 e 2: `rand_b` = 62 bits baixos de `r2`.
-8. Gravar **byte 8** = `0x80` **OU** os 6 bits mais altos de `rand_b`
-   (assim os 2 bits superiores formam a variante `10`).
-   Gravar **bytes 9..15** com os 56 bits restantes de `rand_b`
-   (big-endian).
-9. Devolver os 16 bytes.
+### 3.1 Distribuição de Bits por Nível
 
-Para gerar a **string**, gerar o binário e convertê-lo (Seção 6).
+| Campo         | Tamanho | Posição (bits) | Bytes   | Nível 1 (RFC)        | Nível 2 (+us)          | Nível 3 (+us +ns)      |
+|:--------------|:--------|:---------------|:--------|:---------------------|:-----------------------|:-----------------------|
+| `unix_ts_ms`  | 48 bits | 0–47           | 0..5    | ms Unix (UTC)        | ms Unix (UTC)          | ms Unix (UTC)          |
+| `ver`         | 4 bits  | 48–51          | 6 (alto)| `0x7`                | `0x7`                  | `0x7`                  |
+| `rand_a`      | 12 bits | 52–63          | 6(b)..7 | aleatório            | microssegundos (0..999)| microssegundos (0..999)|
+| `var`         | 2 bits  | 64–65          | 8 (alto)| `0b10`               | `0b10`                 | `0b10`                 |
+| `rand_b`      | 62 bits | 66–127         | 8(b)..15| aleatório (62 bits)  | aleatório (62 bits)    | 10b ns (0..999) + 52b  |
 
-Níveis desconhecidos devem ser tratados como Nível 1.
+### 3.2 Aritmética Temporal Segura (Evitando Armadilhas de Relógio)
 
----
+A decomposição do instante em milissegundos, microssegundos e
+nanossegundos deve obedecer a regras estritas de robustez:
 
-## 5. Algoritmo de importação (extrair tempo)
+1. **Prevenção de estouro em 2038 e 2262**:
+   - **NUNCA** leia o relógio como um único número inteiro de
+     nanossegundos de 64 bits (`UnixNano()`). Esse valor satura e
+     transborda em **2262-04-11**.
+   - Obtenha o tempo lendo **duas partes separadas**: segundos Unix
+     inteiros de 64 bits (`sec`) e nanossegundos residuais dentro do
+     segundo atual (`0 <= nsec < 1.000.000.000`).
+2. **Proteção contra instantes anteriores a 1970 (Época Unix)**:
+   - Se o relógio do sistema estiver configurado para uma data anterior a
+     1970-01-01 (`sec < 0`), a aritmética de divisão e módulo padrão de
+     várias linguagens produz restos negativos, corrompendo os bytes do
+     UUID.
+   - **Regra**: se `sec < 0`, fixe `unix_ts_ms = 0`, `micro = 0` e
+     `nano = 0`. Um relógio quebrado ou pré-época não pode gerar campos
+     fora da faixa `0..999`.
+3. **Decomposição pura**:
+   - `unix_ts_ms = (uint64(sec) * 1000) + (uint64(nsec) / 1_000_000)`
+   - `sub_ms = uint64(nsec) % 1_000_000`
+   - `micro = sub_ms / 1000` (faixa 0..999, cabe em 10 bits; campo tem 12 bits)
+   - `nano = sub_ms % 1000` (faixa 0..999, cabe em 10 bits; campo tem 10 bits)
 
-Entrada: um UUID (string ou binário). Saída: quatro componentes:
-**segundos** (timestamp Unix), **milissegundos** (0..999),
-**microssegundos** (0..999) e **nanossegundos** (0..999).
+### 3.3 Sorteio de Entropia Otimizado e Normativo
 
-A importação é **cega quanto ao nível**: sempre lê os mesmos campos,
-considerando os dados ali presentes como se fossem o tempo preciso
-(para UUIDs de Nível 1, micro/nano serão bits aleatórios — isso é
-esperado e aceito).
-
-1. Se a entrada for string, convertê-la em binário (Seção 6).
-2. Ler `unix_ts_ms` dos bytes 0..5 (48 bits, big-endian).
-3. `segundos` = `unix_ts_ms` ÷ 1000.
-4. `milissegundos` = `unix_ts_ms` **mod** 1000.
-5. Ler `rand_a` (12 bits) = (4 bits baixos do byte 6, deslocados 8 à
-   esquerda) **OU** (byte 7). Esse valor é **microssegundos**.
-6. Ler os **10 bits mais altos de `rand_b`** = (6 bits baixos do byte 8,
-   deslocados 4 à esquerda) **OU** (4 bits altos do byte 9). Esse valor
-   é **nanossegundos**.
-7. Devolver os quatro componentes.
-
----
-
-## 6. Conversões string ⇄ binário
-
-### Binário → string
-- Para cada um dos 16 bytes, emitir dois dígitos hexadecimais
-  minúsculos (alto e baixo).
-- Inserir hifens **antes** dos bytes de índice 4, 6, 8 e 10.
-- Resultado: 36 caracteres no formato `8-4-4-4-12`.
-
-### String → binário
-- Validar o tamanho (36 caracteres) e a presença de hifens nas posições
-  8, 13, 18 e 23. Em caso de violação, retornar erro de formato.
-- Percorrer a string ignorando os hifens; a cada par de dígitos
-  hexadecimais, produzir um byte. Aceitar maiúsculas e minúsculas.
-- Qualquer caractere não hexadecimal (fora dos hifens válidos) gera erro
-  de formato.
-
-> Opcional: a implementação pode também aceitar a forma sem hifens (32
-> dígitos) e/ou entre chaves; não é obrigatório.
+- **Nível 2 e Nível 3**: o campo `rand_a` carrega os microssegundos
+  (não é aleatório). Portanto, a biblioteca **DEVE sortear exatamente uma
+  única palavra de 64 bits aleatórios (`r2`)**. O sorteio de uma segunda
+  palavra é desperdício de CPU e de entropia criptográfica do sistema.
+- **Nível 1 (e níveis desconhecidos)**: sortear **duas palavras de 64 bits
+  (`r1` e `r2`)**, usando os 12 bits inferiores de `r1` para preencher
+  `rand_a`.
+- Essa economia é normativa e deve ser travada por testes de contagem.
 
 ---
 
-## 7. Contrato de API (conceitual)
+## 4. Especificação das Demais Versões (1, 2, 3, 4, 5, 6 e 8)
 
-Independente da linguagem, a biblioteca deve expor, com nomes
-equivalentes:
+### 4.1 Versão 1 e Versão 6 (Tempo Gregoriano)
 
-- **Tipo do nível**: três valores — Nível 1, Nível 2, Nível 3.
-- **Tipo do UUID binário**: 16 bytes.
-- **Tipo de tempo importado**: estrutura com segundos, milissegundos,
-  microssegundos e nanossegundos.
-- **Objeto gerador**: criado uma vez, seguro para concorrência.
-  - Construtor padrão (fonte de entropia rápida).
-  - Construtor com fonte de entropia personalizada (que devolve 64 bits
-    e é segura para concorrência) — útil para forçar entropia
-    criptográfica.
-  - Operação: gerar binário a partir de um nível.
-  - Operação: gerar string a partir de um nível.
-- **Funções/atalhos de pacote** que usam um gerador padrão interno para
-  gerar binário e string sem instanciar nada (uso rápido).
-- **Conversões**: binário → string; string → binário (com erro).
-- **Importação**: a partir de string (com erro) e a partir de binário.
-- **Acessores** opcionais: versão e variante de um UUID.
+Utilizam o relógio gregoriano em tiques de **100 nanossegundos** desde a
+reforma do calendário gregoriano em **1582-10-15T00:00:00Z**.
 
-Mensagens de erro devem distinguir, no mínimo, "formato inválido".
+- **Constante de deslocamento gregoriano**:
+  `0x01B21DD213814000` = `122.192.928.000.000.000` tiques até a época
+  Unix (1970-01-01).
+- **Cálculo do carimbo de 60 bits (`now`)**:
+  `now = (uint64(sec) * 10_000_000) + (uint64(nsec) / 100) + gregorianOffset`
 
----
+#### Estrutura da Versão 1:
+- `time_low` (32 bits, bytes 0..3): 32 bits baixos de `now`.
+- `time_mid` (16 bits, bytes 4..5): bits 32..47 de `now`.
+- `time_hi_and_ver` (16 bits, bytes 6..7): 4 bits de versão (`0x1`) + bits 48..59 de `now`.
+- `clock_seq_and_var` (16 bits, bytes 8..9): 2 bits de variante (`0b10`) + 14 bits de sequência.
+- `node` (48 bits, bytes 10..15): identificador de nó (endereço MAC ou pseudoaleatório).
 
-## 8. Requisitos não-funcionais
+#### Estrutura da Versão 6 (K-Sortable Gregoriano):
+Reorganiza os 60 bits de tempo em ordem natural do mais ao menos significativo:
+- Bytes 0..4: 40 bits mais altos de `now` (bits 59..20).
+- Bytes 5..6 (nibble alto): 8 bits do meio (bits 19..12).
+- Byte 6: nibble alto = versão `0x6`; nibble baixo = bits 11..8 de `now`.
+- Byte 7: 8 bits mais baixos de `now` (bits 7..0).
+- Bytes 8..15: idênticos à versão 1 (sequência de relógio e nó).
 
-### Desempenho
-- A geração do binário deve ser **sem alocações de heap** no caminho
-  quente (montar 16 bytes em buffer fixo).
-- A geração da string deve usar buffer de 36 bytes preenchido
-  diretamente, com no máximo uma alocação (a string final).
-- Meta: **milhares de UUIDs por milissegundo** por núcleo em CPUs
-  rápidas; ordem de **dezenas de nanossegundos** por UUID binário.
+### 4.2 Estado Monotônico Compartilhado (v1, v2 e v6)
 
-### Concorrência
-- O gerador é criado **uma vez no boot** e compartilhado por **centenas
-  de threads** simultâneas.
-- A fonte de entropia padrão **não deve ter contenção de lock global**.
-  Recomendação: manter um **conjunto de geradores pseudoaleatórios
-  rápidos por thread** (por exemplo, um pool), cada um semeado uma única
-  vez a partir de uma fonte de alta qualidade (gerador criptográfico do
-  sistema). Em tempo de execução, cada thread avança seu PRNG localmente.
-- Alternativa aceitável: um PRNG global já seguro para concorrência e de
-  baixa contenção, desde que atinja a meta de desempenho.
+A geração de UUIDs baseados em tempo requer sincronização segura:
 
-### Qualidade da aleatoriedade
-- A entropia de **semeadura** deve vir de uma fonte forte do sistema.
-- A entropia de **execução** pode ser pseudoaleatória rápida (prioriza
-  velocidade). A biblioteca deve permitir trocar a fonte por uma
-  criptográfica via o construtor personalizado, para quem precisar de
-  imprevisibilidade total.
+1. **Adiantamento de relógio em alta frequência (Drift)**:
+   - Se sucessivas chamadas ocorrerem no mesmo tique de 100 ns, a
+     biblioteca **avança o relógio interno em 1 tique (+100 ns) por
+     geração**, em vez de bloquear em espera (*sleep*).
+   - Isso garante ordenação estrita e unicidade absoluta mesmo em
+     geração massiva sob lock.
+2. **Regra Anti-Repetição em `SetNodeID` (Evitando Repetição de UUID)**:
+   - Uma falha comum em implementações é resetar o último instante
+     registrado (`lastClockTime = 0`) ao trocar ou reaplicar o identificador
+     de nó.
+   - **Regra**: Se o chamador reaplicar o mesmo nó já em uso, ou trocar
+     de nó, o carimbo de tempo **NÃO PODE ser zerado**. Zerar o carimbo
+     permite que a próxima chamada leia o relógio físico atual que pode
+     estar atrás do tempo acumulado por adiantamento, gerando colisões de
+     identificadores.
+3. **Identificador de Nó**:
+   - Se o sistema possuir placa de rede, usa o MAC address.
+   - Se não houver MAC ou se for sorteado aleatoriamente, o **bit 0 do
+     byte 10 (bit multicast) DEVE ser setado em 1**, indicando que não é
+     um endereço MAC físico real (RFC 9562, §6.10).
 
-### Robustez
-- O relógio pode, raramente, retroceder. A implementação básica não
-  precisa tratar isso, mas deve documentar a possibilidade. Uma extensão
-  opcional é manter monotonicidade por contador, ao custo de estado
-  compartilhado.
-- O relógio pode estar ajustado para **antes da época Unix**. A
-  decomposição do instante deve garantir que os campos sub-milissegundo
-  permaneçam em 0..999 nesse caso (por exemplo, fixando o piso do
-  timestamp na própria época); aritmética com resto de números negativos
-  produz valores fora da faixa que corrompem o UUID silenciosamente.
-- Se a leitura do relógio for feita como um único inteiro de
-  nanossegundos com 64 bits, ela satura em 2262-04-11. Ler segundos e
-  fração do segundo em separado evita esse limite.
-- O analisador de string **jamais** pode ler fora dos limites da entrada,
-  qualquer que seja o conteúdo: ele recebe dado externo. Decodificar a
-  partir de deslocamentos fixos e conhecidos (em vez de percorrer a
-  string pulando separadores) elimina a classe inteira de erro.
-- A fonte de entropia deve ser validada na construção do gerador, não na
-  primeira geração; e um gerador obtido pelo valor zero do tipo não pode
-  derrubar o processo.
+### 4.3 Versão 2 (DCE 1.1 Security)
 
----
+- **Objetivo**: Identificar uma credencial ou entidade (Pessoa, Grupo,
+  Organização) dentro de um domínio de segurança, **não um evento
+  individual**.
+- **Modificações sobre o UUIDv1**:
+  - Bytes 0..3 (`time_low`): substituídos pelo identificador local de
+    32 bits (ex.: UID ou GID do sistema operacional).
+  - Byte 9 (`clock_seq_low`): substituído pelo domínio (Person=`0`,
+    Group=`1`, Org=`2`).
+  - O carimbo temporal preserva apenas os 28 bits altos do tempo
+    gregoriano (resolução aproximada de 7 minutos = ~429 segundos).
+- **Propriedade Normativa**:
+  - Chamadas sucessivas com o mesmo domínio e mesmo identificador dentro
+    do mesmo intervalo de ~7 minutos **devolvem intencionalmente o mesmo
+    UUID**.
+- **Inspeção de Sequência de Relógio**:
+  - Ao inspecionar `ClockSequence()` de um UUIDv2, devolver **apenas os 6
+    bits mais altos** (faixa 0..63 do byte 8), pois o byte 9 é ocupado
+    pelo domínio.
 
-## 9. Casos de teste obrigatórios
+### 4.4 Versão 3 e Versão 5 (Baseadas em Espaço de Nomes)
 
-1. **Versão e variante**: todo UUID gerado (qualquer nível) tem `ver=7`
-   e `var=10`.
-2. **Round-trip de conversão**: binário → string → binário devolve os
-   mesmos 16 bytes, para milhares de amostras.
-3. **Faixas sub-ms**: para Níveis 2 e 3, os microssegundos importados
-   ficam em 0..999; para Nível 3, os nanossegundos importados ficam em
-   0..999 (validar em centenas de milhares de amostras).
-4. **Importação coerente**: o instante reconstruído a partir de
-   segundos+ms+us+ns cai dentro do intervalo de tempo medido em torno da
-   geração (com tolerância de 1 ms).
-5. **Strings inválidas**: tamanho errado, hifens errados ou dígitos não
-   hexadecimais produzem erro de formato.
-6. **Ordenação**: sempre que o instante embutido de B for maior que o de
-   A, a string de B tem de ser maior que a de A (e o binário também), nos
-   três níveis. Este é o teste correto. **Não** testar contando
-   "regressões em uma sequência fechada com limiar tolerado": isso mede a
-   resolução do relógio do host, não a biblioteca — sem contador de
-   desempate, a maioria dos pares consecutivos cai no mesmo instante e é
-   ordenada aleatoriamente. Se for desejável um teste sobre o relógio
-   real, inserir uma pausa maior que a resolução do relógio entre as
-   gerações e então exigir ordem estrita.
-7. **Concorrência**: gerar 1.000.000 de UUIDs distribuídos por centenas
-   de threads não causa erro nem corrupção, e o resultado permanece
-   válido. A própria suíte deve estar limpa sob detector de corrida —
-   nada de sumidouro global escrito por várias threads.
-8. **Robustez do analisador**: nenhuma entrada de qualquer tamanho ou
-   conteúdo pode causar acesso fora dos limites. Cobrir, no mínimo, toda
-   mutação de um byte sobre uma string canônica válida (inclusive
-   separadores extras em posições inesperadas) e, se a linguagem
-   oferecer, uma campanha de *fuzzing*.
-9. **Bordas do gerador**: fonte de entropia nula rejeitada na
-   construção; gerador obtido pelo valor zero do tipo não derruba o
-   processo; níveis desconhecidos se comportam exatamente como o
-   Nível 1.
+1. Obter os 16 bytes do UUID de espaço de nomes (ex.: `NameSpaceDNS`,
+   `NameSpaceURL`, `NameSpaceOID`, `NameSpaceX500`).
+2. Concatenar os 16 bytes do espaço de nomes com os bytes do nome
+   fornecido.
+3. Calcular o hash criptográfico do conjunto:
+   - **Versão 3**: MD5 (produz exatamente 16 bytes).
+   - **Versão 5**: SHA-1 (produz 20 bytes; descartar os 4 bytes
+     finais).
+4. Gravar a versão no nibble alto do byte 6 (`0x3` ou `0x5`).
+5. Gravar a variante nos 2 bits superiores do byte 8 (`0b10`).
+
+### 4.5 Versão 4 e Versão 8
+
+- **Versão 4**: 16 bytes preenchidos com aleatoriedade. Sobrescrever o
+  nibble alto do byte 6 com `0x4` e os bits altos do byte 8 com `0b10`.
+- **Versão 8**: Formato livre da RFC 9562 para uso específico de
+  aplicações. Manter os 122 bits fornecidos ou preenchê-los com
+  aleatoriedade, sobrescrevendo a versão com `0x8` e a variante `0b10`.
 
 ---
 
-## 10. Benchmark obrigatório
+## 5. Arquitetura de Entropia e Política de Falha Rápida (Fail-Fast)
 
-Medir o tempo para gerar **1.000.000** de UUIDs em cada cenário e
-reportar tempo total, nanossegundos por UUID e UUIDs por milissegundo:
+### 5.1 O Gerador Padrão (Alta Concorrência e Zero Contenção)
 
-- Nível 1 binário, Nível 2 binário, Nível 3 binário.
-- Nível 1 string, Nível 2 string, Nível 3 string.
-- Variante concorrente do Nível 3 (centenas de threads), reportando
-  throughput agregado.
+- Para geração rápida (milhões de UUIDs/s), não utilize um lock global em
+  torno de uma fonte compartilhada.
+- Mantenha um **pool de geradores pseudoaleatórios locais por thread /
+  goroutine** (ex.: PCG de 128 bits de estado, `math/rand/v2`).
+- Cada gerador local do pool é instanciado sob demanda e semeado **uma
+  única vez** com 128 bits (duas palavras de 64 bits) obtidos da fonte
+  criptográfica forte do sistema operacional (`crypto/rand`).
 
-O benchmark deve impedir que o compilador elimine o trabalho (consumir
-os resultados em uma variável "sumidouro").
+### 5.2 Política Anti-Degradação Silenciosa (Evitando Falha Grave de Segurança)
+
+- **Regra Crítica**: Se a fonte forte de entropia do sistema operacional
+  falhar ao semear um gerador ou ao sortear dados para nós e sequências:
+  - **A biblioteca DEVE falhar alto e imediatamente (pânico / exceção /
+    encerramento)**.
+  - **JAMAIS recorra ao relógio do sistema como fallback silencioso**.
+    Semear múltiplos geradores com o horário atual produz sequências
+    idênticas ou correlacionadas entre threads, levando a colisões
+    maciças de UUIDs e previsibilidade total de chaves e identificadores.
+
+### 5.3 Fontes Criptográficas Dedicadas
+
+- O gerador padrão com PCG é estatístico e previsível após algumas
+  amostras.
+- Para casos que exigem imprevisibilidade (tokens de sessão, links
+  secretos), a biblioteca deve fornecer um gerador explícito que utiliza
+  exclusivamente entropia criptográfica (`NewCryptoGenerator`).
+- As funções de compatibilidade com pacotes legados (como `google/uuid`:
+  `New`, `NewString`, `NewRandom`, `NewV7`) **DEVEM utilizar entropia
+  criptográfica** para não violar o contrato de segurança esperado por
+  códigos migrados.
 
 ---
 
-## 11. Organização de arquivos sugerida
+## 6. Algoritmos de Conversão e Parsing Seguro
 
-- **Raiz**: apenas o necessário para produção (código da biblioteca,
-  manifesto de build, README, mapa do projeto, licença).
-- **Subpasta de documentação**: guias de uso rápido, uso completo, de
-  testes/benchmark e este documento.
-- **Subpasta de testes**: testes funcionais, benchmarks e um executável
-  autônomo de benchmark em massa, todos importando a biblioteca pelo seu
-  caminho público (como um consumidor externo faria).
+### 6.1 Formatação (Binário → String Canônica)
+
+- Utilizar uma tabela de caracteres hexadecimais minúsculos
+  `"0123456789abcdef"`.
+- Gravar diretamente em um buffer fixo de 36 caracteres, inserindo os
+  hifens nos índices 8, 13, 18 e 23 sem alocações intermediárias.
+
+### 6.2 Análise Estrita (String Canônica → Binário)
+
+- Validar comprimento exato de 36 caracteres.
+- Validar se `s[8] == '-'`, `s[13] == '-'`, `s[18] == '-'` e
+  `s[23] == '-'`.
+- **REGRA CRÍTICA DE SEGURANÇA (Eliminação de Defeito Crítico de Pânico)**:
+  - **NUNCA** decodifique a string percorrendo caractere por caractere e
+    avançando um índice quando encontrar um hífen. Se a entrada contiver
+    hifens extras em posições inesperadas, o laço desalinha e tenta ler
+    `s[36]`, resultando em pânico de estouro de array (*index out of
+    range*) e derrubando o processo da aplicação.
+  - **DECODIFIQUE SEMPRE via tabela de deslocamentos fixos conhecidos**:
+    `hexOffsets = [16]int{0, 2, 4, 6, 9, 11, 14, 16, 19, 21, 24, 26, 28, 30, 32, 34}`
+  - Para cada byte `i` de 0 a 15, decodifique os dois caracteres
+    hexadecimais localizados em `s[hexOffsets[i]]` e
+    `s[hexOffsets[i]+1]`.
+  - Se qualquer caractere não for hexadecimal válido (0..9, a..f, A..F),
+    retorne erro de formato e devolva o UUID zerado.
+
+### 6.3 Analisador Permissivo (4 Formatos)
+
+A função `Parse` deve aceitar quatro formatos distintos (maiúsculas ou
+minúsculas):
+
+1. **Canônico com hífens** (36 caracteres): decodificado conforme 6.2.
+2. **Sem hífens** (32 caracteres): decodificado diretamente a cada 2
+   caracteres (`i * 2`).
+3. **Entre chaves** (38 caracteres): deve iniciar com `{` e terminar com
+   `}`, contendo os 36 caracteres canônicos internamente.
+4. **Prefixo URN** (45 caracteres): deve iniciar com `urn:uuid:`
+   (insensível a maiúsculas), seguido dos 36 caracteres canônicos.
+- Qualquer outro comprimento deve ser rejeitado imediatamente como
+  comprimento inválido.
+
+---
+
+## 7. Inspeção e Contrato de API
+
+A biblioteca deve disponibilizar operações de consulta:
+
+- **`Version() byte`**: retorna o número da versão (1 a 8).
+- **`Variant() byte`**: retorna a variante RFC (geralmente `10` binário =
+  `VariantRFC4122`).
+- **`Timestamp() (time.Time, bool)`**:
+  - Para UUIDv7: extrai os milissegundos Unix.
+  - Para UUIDv1 e UUIDv6: extrai o carimbo gregoriano e converte para
+    UTC.
+  - Para demais versões: devolve booleano falso.
+- **`TimestampWithLevel(Level)`**: recupera microssegundos e
+  nanossegundos caso o nível informado tenha embutido esses dados.
+- **`ClockSequence() (int, bool)`**:
+  - Para v1 e v6: retorna os 14 bits completos da sequência.
+  - Para v2: retorna **apenas os 6 bits mais altos** (0 a 63).
+  - Para demais versões: retorna falso.
+- **`GetTime() (GregorianTime, int, bool)`**: devolve o tempo gregoriano
+  e a sequência no formato `0..0x3fff` (14 bits, bit `0x8000` limpo).
+- **`Domain() (Domain, bool)`** e **`ID() (uint32, bool)`**: para UUIDv2.
+- **`NodeID() ([]byte, bool)`**: para v1, v2 e v6 (6 bytes).
+
+---
+
+## 8. Serialização, Banco de Dados e Valores Especiais
+
+1. **Serialização em Texto e JSON**:
+   - Um UUID serializado em JSON **DEVE ser formatado como string
+     canônica entre aspas** (`"0192f7c5-1a2b-7c3d-8e4f-aabbccddeeff"`).
+   - **NUNCA** serialize como um vetor/array de 16 números inteiros.
+2. **Integração com Banco de Dados**:
+   - Suporte a leitura e escrita de UUIDs como string canônica ou binário
+     de 16 bytes.
+   - Fornecer um tipo `NullUUID` contendo o UUID e um booleano `Valid`
+     para campos de tabela que permitem valor `NULL`.
+3. **Valores Especiais**:
+   - `Nil`: todos os 16 bytes em zero (`00000000-0000-0000-0000-000000000000`).
+   - `Max`: todos os 16 bytes em `0xFF` (`ffffffff-ffff-ffff-ffff-ffffffffffff`).
+   - `Compare(a, b)`: comparação byte a byte em ordem lexicográfica
+     retornando `-1`, `0` ou `1`.
+
+---
+
+## 9. Catálogo de Armadilhas Evitadas (Guia Anti-Regressão)
+
+Toda reimplementação deve garantir proteção contra estes 10 defeitos
+reais:
+
+| # | Armadilha Histórica | Consequência | Solução Obrigatória |
+|---|:---|:---|:---|
+| 1 | **Parser pulando hífens em laço** | Entrada maliciosa com hífen extra causava pânico e crash por `index out of range` | Decodificar exclusivamente por tabela fixa de 16 posições (`hexOffsets`) |
+| 2 | **Relógio anterior a 1970** | Módulo de números negativos corrompia `rand_a` e `rand_b` | Fixar piso em 0 para `unix_ts_ms`, microssegundos e nanossegundos se `sec < 0` |
+| 3 | **Inteiro de 64 bits para nanos** | `UnixNano()` estoura em 2262-04-11 | Ler segundos e nanossegundos em duas partes separadas |
+| 4 | **Reset de relógio em `SetNodeID`** | Reaplicar nó zerava `lastClockTime`, gerando repetição de UUIDv1 | Manter o carimbo de relógio inalterado ao configurar ou reaplicar o nó |
+| 5 | **Fallback de entropia no relógio** | Falha de `crypto/rand` degradava silenciosamente para o relógio, gerando colisões | Falhar imediatamente com pânico (fail-fast); proibido degradar em silêncio |
+| 6 | **Escrita em sink global em teste concorrente** | Detector de corrida (`-race`) disparava falso alerta em benchmarks | Usar `runtime.KeepAlive(u)` por goroutine em vez de escrever em variável compartilhada |
+| 7 | **`ClockSequence` na versão 2** | Retornava o identificador de domínio mascarado dentro da sequência | Isolar apenas os 6 bits superiores (0..63) para a versão 2 |
+| 8 | **Desperdício de entropia no v7** | Sortear duas palavras de 64 bits nos Níveis 2 e 3 | Sortear apenas 1 palavra nos Níveis 2 e 3 (economia de 17% em concorrência) |
+| 9 | **Serialização JSON como array** | `[1, 146, 247, ...]` em vez de `"0192f7c5-..."` quebrava interoperabilidade | Implementar `MarshalText`/`MarshalBinary` canônicos |
+| 10 | **Tags sobrescritas com `-f`** | Quebrava a verificação de integridade no registro público (`sum.golang.org`) | Tags publicadas são estritamente imutáveis; nunca mover com `-f` |
+
+---
+
+## 10. Casos de Teste Obrigatórios para Validação
+
+1. **Conformidade de Versão e Variante**:
+   - Validar que cada gerador (V1 a V8 e Níveis 1 a 3 de V7) define
+     exatamente sua respectiva versão e variante `0b10`.
+2. **Robustez do Analisador contra Mutações**:
+   - Executar teste cobrindo **todas as 36 × 256 mutações de um único byte**
+     sobre uma string canônica válida: nenhuma mutação pode causar pânico.
+   - Submeter o analisador a campanhas de *fuzzing* contínuo.
+3. **Bordas Temporais Extremas**:
+   - Testar instantes com data anterior a 1970 (ex.: ano 1969 e ano 1800).
+   - Testar instantes além do ano 2262 (ex.: ano 2300).
+   - Validar viradas de segundo (`nsec = 999_999_999`) e viradas de
+     milissegundo (`sub_ms = 999_999`).
+4. **Contagem de Sorteios de Entropia**:
+   - Com gerador de contagem determinística, verificar que Nível 2 e
+     Nível 3 consomem 1 chamada; Nível 1 consome 2 chamadas.
+5. **Vetores Dourados da RFC 9562 para Versões Baseadas em Hash**:
+   - Validar que V3 e V5 produzem exatamente os hashes conhecidos da
+     especificação para espaços de nomes conhecidos (DNS, URL).
+6. **Ordenação Temporal Coerente**:
+   - Testar que se o instante de B for estritamente superior ao instante de
+     A, a comparação de strings e de bytes de B é estritamente maior que a
+     de A.
+   - Não contar regressões em laço apertado na mesma thread: se o tempo não
+     avança na resolução do host, o desempate por entropia é aleatório.
+7. **Teste de Não-Repetição de Nó**:
+   - Gerar uma rajada de UUIDv1, chamar `SetNodeID` com o mesmo nó e gerar
+     outra rajada: garantir unicidade absoluta de todos os UUIDs gerados.
+8. **Concorrência e Ausência de Corridas de Dados**:
+   - Gerar 1.000.000 de UUIDs divididos entre centenas de threads
+     simultâneas sem nenhuma colisão e sem nenhum alerta no detector de
+     corridas (*race detector*).

@@ -179,3 +179,60 @@ func TestMassConcurrent(t *testing.T) {
 		goroutines*perGoroutine, goroutines, dur,
 		float64(goroutines*perGoroutine)/(float64(dur.Nanoseconds())/1e6))
 }
+
+// Benchmarks das demais versões de UUID. Servem para comparar o custo de
+// cada esquema; o caminho do UUIDv7 continua sendo o dos benchmarks
+// anteriores, e nenhum destes o atravessa.
+
+func BenchmarkGenerateV1(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = uuid.GenerateV1()
+	}
+}
+
+func BenchmarkGenerateV4(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = g.GenerateV4()
+	}
+}
+
+func BenchmarkGenerateV5(b *testing.B) {
+	name := []byte("https://exemplo.com.br/recurso/1")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkU = uuid.GenerateV5(uuid.NameSpaceURL, name)
+	}
+}
+
+func BenchmarkGenerateV6(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = uuid.GenerateV6()
+	}
+}
+
+// BenchmarkGenerateV1Parallel mede o custo do lock compartilhado pelas
+// versões 1, 2 e 6, em contraste com o UUIDv7, que não tem lock algum.
+func BenchmarkGenerateV1Parallel(b *testing.B) {
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		var u uuid.UUID
+		for pb.Next() {
+			u = uuid.GenerateV1()
+		}
+		// Mantém o valor vivo sem escrever no sink global: publicar em
+		// sinkU a partir de várias goroutines é uma corrida de dados.
+		runtime.KeepAlive(u)
+	})
+}
+
+// BenchmarkParse mede o analisador permissivo no formato canônico.
+func BenchmarkParse(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU, _ = uuid.Parse(canonical)
+	}
+}

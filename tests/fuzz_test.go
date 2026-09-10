@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -48,6 +49,79 @@ func FuzzFromString(f *testing.F) {
 		// Importar nunca pode falhar para uma string já aceita.
 		if _, err := uuid.Import(s); err != nil {
 			t.Fatalf("Import(%q) falhou depois de FromString aceitar: %v", s, err)
+		}
+	})
+}
+
+// FuzzParse procura entradas que façam o analisador permissivo entrar em
+// pânico ou aceitar algo que não sobreviva ao round-trip.
+//
+// Vale mais que FuzzFromString porque Parse tem quatro caminhos e usa
+// aritmética de índice — recortes como v[9:] e v[1:37] só são seguros
+// por causa do teste de comprimento que os precede. Rode com:
+//
+//	go test ./tests/ -run '^$' -fuzz FuzzParse -fuzztime 30s
+func FuzzParse(f *testing.F) {
+	f.Add(canonical)
+	f.Add(strings.ToUpper(canonical))
+	f.Add("{" + canonical + "}")
+	f.Add("urn:uuid:" + canonical)
+	f.Add("URN:UUID:" + canonical)
+	f.Add(strings.ReplaceAll(canonical, "-", ""))
+	f.Add("")
+	f.Add("{")
+	f.Add("}")
+	f.Add("urn:uuid:")
+	f.Add("{" + canonical)
+	f.Add(canonical + "}")
+
+	f.Fuzz(func(t *testing.T, s string) {
+		// Parse jamais pode entrar em pânico, qualquer que seja a entrada.
+		u, err := uuid.Parse(s)
+
+		// ParseBytes precisa concordar com Parse em todos os casos.
+		ub, errb := uuid.ParseBytes([]byte(s))
+		if u != ub || (err == nil) != (errb == nil) {
+			t.Fatalf("Parse e ParseBytes divergiram para %q: %v/%v e %v/%v", s, u, err, ub, errb)
+		}
+
+		// Validate precisa concordar com Parse quanto a aceitar ou recusar.
+		if (uuid.Validate(s) == nil) != (err == nil) {
+			t.Fatalf("Validate divergiu de Parse para %q", s)
+		}
+
+		if err != nil {
+			if !u.IsZero() {
+				t.Fatalf("Parse(%q) devolveu erro e um UUID não zerado: %v", s, u)
+			}
+			if !errors.Is(err, uuid.ErrInvalidFormat) {
+				t.Fatalf("Parse(%q): erro %v não é reconhecível como ErrInvalidFormat", s, err)
+			}
+			return
+		}
+
+		// Se aceitou, as três reemissões precisam voltar ao mesmo valor.
+		for name, text := range map[string]string{
+			"String": u.String(),
+			"URN":    u.URN(),
+		} {
+			again, err := uuid.Parse(text)
+			if err != nil {
+				t.Fatalf("round-trip por %s falhou para %q: %v", name, s, err)
+			}
+			if again != u {
+				t.Fatalf("round-trip por %s divergiu para %q: %v vs %v", name, s, u, again)
+			}
+		}
+
+		// A serialização em texto precisa ser lida de volta sem perda.
+		text, err := u.MarshalText()
+		if err != nil {
+			t.Fatalf("MarshalText falhou para %q: %v", s, err)
+		}
+		var back uuid.UUID
+		if err := back.UnmarshalText(text); err != nil || back != u {
+			t.Fatalf("volta pelo texto divergiu para %q: %v vs %v, erro %v", s, u, back, err)
 		}
 	})
 }

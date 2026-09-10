@@ -136,11 +136,17 @@ func NewGeneratorWith(source func() uint64) *Generator {
 }
 
 // strongSeed lê 8 bytes de crypto/rand e os converte em uint64.
-// Em caso de falha (extremamente raro), recorre ao relógio.
+//
+// Entra em pânico se a leitura falhar: uma fonte de entropia quebrada não
+// pode degradar em silêncio para sementes derivadas do relógio, que
+// tornariam todos os PRNGs do pool correlacionados e previsíveis. A partir
+// do Go 1.24 crypto/rand.Read nunca devolve erro (o próprio runtime
+// encerra o processo), então este ramo só é alcançável em toolchains
+// anteriores.
 func strongSeed() uint64 {
 	var b [8]byte
 	if _, err := crand.Read(b[:]); err != nil {
-		return uint64(time.Now().UnixNano())
+		panic("loghubuuid: falha ao ler crypto/rand para semear o gerador padrão: " + err.Error())
 	}
 	return binary.LittleEndian.Uint64(b[:])
 }
@@ -178,18 +184,7 @@ func (g *Generator) Generate(level Level) UUID {
 	// satura em 2262-04-11, enquanto a leitura em duas partes não tem esse
 	// limite e Nanosecond() nunca devolve valor negativo.
 	now := time.Now()
-	sec := now.Unix()               // segundos desde 1970-01-01 UTC
-	nsec := int64(now.Nanosecond()) // fração do segundo: 0..999_999_999
-
-	ms := sec*1_000 + nsec/1_000_000 // milissegundos desde a época
-	if ms < 0 {
-		// Relógio ajustado para antes de 1970: sem esse piso, os campos
-		// sub-milissegundo estourariam a faixa 0..999 ao virarem uint16.
-		ms, nsec = 0, 0
-	}
-	rem := nsec % 1_000_000      // parte sub-milissegundo: 0..999_999 ns
-	micro := uint16(rem / 1_000) // microssegundos dentro do ms: 0..999
-	nano := uint16(rem % 1_000)  // nanossegundos dentro do micro: 0..999
+	ms, micro, nano := splitUnixInstant(now.Unix(), int64(now.Nanosecond()))
 
 	// Nos níveis 2 e 3 rand_a carrega os microssegundos, portanto r1 seria
 	// descartado: nesses casos sorteia-se uma única palavra de 64 bits.
@@ -241,6 +236,24 @@ func (g *Generator) Generate(level Level) UUID {
 	u[15] = byte(randB)
 
 	return u
+}
+
+// splitUnixInstant decompõe um instante lido em duas partes — segundos
+// desde a época Unix e fração do segundo em nanossegundos (0..999_999_999)
+// — nos campos gravados pelo UUIDv7: milissegundos desde a época,
+// microssegundos dentro do milissegundo e nanossegundos dentro do
+// microssegundo. Instantes anteriores à época degradam para a própria
+// época, com os campos sub-milissegundo zerados. É pura e pequena o
+// bastante para ser embutida pelo compilador no caminho quente.
+func splitUnixInstant(sec, nsec int64) (ms int64, micro, nano uint16) {
+	ms = sec*1_000 + nsec/1_000_000 // milissegundos desde a época
+	if ms < 0 {
+		// Relógio ajustado para antes de 1970: sem esse piso, os campos
+		// sub-milissegundo estourariam a faixa 0..999 ao virarem uint16.
+		ms, nsec = 0, 0
+	}
+	rem := nsec % 1_000_000 // parte sub-milissegundo: 0..999_999 ns
+	return ms, uint16(rem / 1_000), uint16(rem % 1_000)
 }
 
 // GenerateString produz um UUID do nível informado já no formato string

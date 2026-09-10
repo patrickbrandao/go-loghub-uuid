@@ -2,7 +2,8 @@
 
 Biblioteca Go leve e rápida para gerar **UUIDv7** (RFC 9562) com **três
 níveis de precisão temporal**, conversões string⇄binário e importação
-das propriedades de tempo.
+das propriedades de tempo. Gera também **todas as demais versões de
+UUID** da RFC 9562 — 1, 2, 3, 4, 5, 6 e 8.
 
 - **Rápida**: geração binária em dezenas de nanossegundos, **zero
   alocações**, mais de **11 mil UUIDs/ms** por núcleo (em VM modesta).
@@ -10,6 +11,8 @@ das propriedades de tempo.
   de goroutines sem trava global.
 - **Sem dependências**: apenas a biblioteca padrão do Go.
 - **Multinível**: do milissegundo padrão até nanossegundos embutidos.
+- **Completa**: todas as versões da RFC 9562, análise permissiva de
+  texto, serialização em JSON e integração com `database/sql`.
 
 ## Níveis
 
@@ -21,6 +24,22 @@ das propriedades de tempo.
 
 Todos preservam versão 7 e variante RFC.
 
+## Todas as versões de UUID
+
+| Função                  | Versão | Base                                    |
+|-------------------------|:------:|-----------------------------------------|
+| `GenerateV1`            | 1      | tempo gregoriano + nó + sequência       |
+| `GenerateV2`            | 2      | versão 1 com domínio e identificador    |
+| `GenerateV3`            | 3      | resumo MD5 de espaço de nomes + nome    |
+| `GenerateV4`            | 4      | 122 bits aleatórios                     |
+| `GenerateV5`            | 5      | resumo SHA-1 de espaço de nomes + nome  |
+| `GenerateV6`            | 6      | versão 1 com tempo reordenado, ordenável|
+| `Generate(Level1..3)`   | 7      | tempo Unix, com os três níveis          |
+| `GenerateV8`            | 8      | 122 bits livres, definidos pelo chamador|
+
+As versões 1, 2 e 6 compartilham um relógio interno com trava própria. O
+caminho do UUIDv7 continua sem trava alguma e sem alocações.
+
 ## Instalação
 
 ```bash
@@ -29,7 +48,9 @@ go get github.com/patrickbrandao/go-loghub-uuid
 
 ## Uso rápido no Linux
 
-Instalar Go:
+Instalar Go (é necessário **Go 1.22 ou superior**; confira com
+`go version` — se a distribuição empacotar versão inferior, use o
+instalador oficial):
 ```bash
 apt-get update;
 apt-get install -y golang-go;
@@ -41,7 +62,7 @@ module uuid-test
 
 go 1.22
 
-require github.com/patrickbrandao/go-loghub-uuid v0.2.0
+require github.com/patrickbrandao/go-loghub-uuid v0.3.0
 ```
 
 > O `require` acima é preenchido automaticamente pelo `go get` mostrado
@@ -66,17 +87,13 @@ func main() {
 
 Compilar:
 ```bash
-#go mod download;
-GOSUMDB=off go mod download;
-#go env -w GOPROXY=direct && go mod download;
-#go build .;
+go mod download;
 go build -o test-uuid test-uuid.go;
 ```
 
 Compilar (alternativa):
 ```bash
-go env -w GOSUMDB=off;
-go get github.com/patrickbrandao/go-loghub-uuid;
+go get github.com/patrickbrandao/go-loghub-uuid@latest;
 go mod tidy;
 go build -o test-uuid test-uuid.go;
 ```
@@ -109,8 +126,10 @@ func newID() string { return Gen.GenerateString(uuid.Level3) }
 
 ## Aviso de segurança
 
-O gerador padrão (`NewGenerator`, e as funções de pacote `Generate` /
-`GenerateString`) usa um PRNG **estatístico** (PCG), não criptográfico.
+O gerador padrão (`NewGenerator`, e as funções de pacote `Generate`,
+`GenerateString`, `GenerateV4` e `GenerateV8Random`) usa um PRNG
+**estatístico** (PCG), não criptográfico. Os apelidos de compatibilidade
+`New`, `NewString`, `NewRandom` e `NewV7` leem de `crypto/rand`.
 Quem observar alguns identificadores consegue reconstruir o estado
 interno e prever os seguintes; além disso, todo UUIDv7 expõe o instante
 de criação por construção.
@@ -120,19 +139,12 @@ chave de recuperação ou senha de uso único. Para identificadores que
 precisem ser inadivinháveis, monte o gerador com entropia criptográfica:
 
 ```go
-import (
-	crand "crypto/rand"
-	"encoding/binary"
-)
-
-func cryptoBits() uint64 {
-	var b [8]byte
-	crand.Read(b[:])
-	return binary.LittleEndian.Uint64(b[:])
-}
-
-var Gen = uuid.NewGeneratorWith(cryptoBits)
+var Gen = uuid.NewCryptoGenerator()
 ```
+
+`NewGeneratorWithReader` aceita qualquer `io.Reader` seguro para uso
+concorrente, e `NewGeneratorWith` continua aceitando uma função que
+devolve 64 bits.
 
 Como identificador de registro, chave primária ou correlação de log — o
 uso a que a biblioteca se destina — o gerador padrão é adequado.
@@ -140,6 +152,8 @@ uso a que a biblioteca se destina — o gerador padrão é adequado.
 ## Mais
 
 - **Mapa completo do projeto**: [STARTHERE.md](STARTHERE.md)
+- Vindo do pacote `github.com/google/uuid`:
+  [docs/MIGRATION.md](docs/MIGRATION.md)
 - Uso rápido: [docs/DEPLOY-FAST.md](docs/DEPLOY-FAST.md)
 - Uso completo (todas as funções): [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md)
 - Testes e benchmark: [docs/TEST-AND-BENCHMARK.md](docs/TEST-AND-BENCHMARK.md)
