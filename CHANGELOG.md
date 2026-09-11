@@ -22,7 +22,10 @@ Convenções de cada seção:
 Passagem de auditoria estática de 2026-09-10 sobre a `v0.3.0`: seis
 problemas encontrados e corrigidos, todos verificados com `gofmt`,
 `go vet` e a suíte sob detector de corrida no Go 1.22 (mínimo declarado)
-e no Go 1.27.
+e no Go 1.27. Em 2026-09-11, a integração contínua foi ampliada (linter,
+outros sistemas, cobertura, corpus de fuzzing) e a documentação ganhou
+exemplos executáveis, guia de release, política de segurança e guia de
+contribuição. Nenhuma mudança de comportamento na biblioteca.
 
 ### Alterado
 
@@ -87,7 +90,56 @@ e no Go 1.27.
   `-race`; a medição válida é a feita sem o detector, que o CI executa.
 - `FuzzNullUUIDJSON`: alvo de fuzzing para o leitor de JSON de
   `NullUUID`, que exige concordância com o tipo `UUID` lido pelo
-  `encoding/json` em aceitar, recusar e no valor produzido.
+  `encoding/json` em aceitar, recusar e no valor produzido. Incluído no
+  job semanal `deep` ao lado dos outros dois alvos.
+- **Linter estático** com `golangci-lint` (versão 2), configurado em
+  `.golangci.yml` na raiz: `errcheck`, `govet`, `staticcheck`, `unused`,
+  `ineffassign`, `gosec`, `errorlint`, `revive` (comentário em todo
+  exportado) e `nolintlint`. `misspell` fica desligado porque só conhece
+  inglês. A regra `G115` do `gosec` (truncamento em conversão de inteiro)
+  é excluída de propósito: empacotar campos em bytes por deslocamento e
+  truncamento é o que a biblioteca faz, e o caminho quente não ganhou
+  máscara alguma (benchmarks idênticos antes e depois). Roda no CI na
+  versão estável. As duas marcações `//nolint:errcheck` de
+  `namebased.go` eram desnecessárias (`errcheck` já ignora `hash.Hash.Write`)
+  e foram trocadas por comentário comum; as demais ganharam o linter e o
+  motivo que o `nolintlint` exige. Em testes, três comparações diretas
+  com `ErrInvalidFormat` passaram a `errors.Is` (a comparação direta,
+  que é o contrato de `FromString`, continua testada em
+  `TestFromStringErrorUnchanged`), o auxiliar `safeFromString` passou a
+  devolver o erro por último e o aquecimento de `benchmark-bulk` deixou
+  de fazer uma atribuição inútil. (`.golangci.yml`, `ci.yml`,
+  `namebased.go`, `uuid.go` só em comentário, `tests/`)
+- **Compilação cruzada no CI** para `windows/amd64`, `darwin/arm64` e
+  `linux/arm64` (`go build` e `go vet`) no job `test`, e o job novo
+  `test-os`, que roda `go vet`, `go build` e `go test ./... -short` em
+  `windows-latest` e `macos-latest` com a versão estável, em pull
+  request, tag, no agendamento semanal e sob demanda. (`ci.yml`)
+- **Cobertura de testes no CI**: o job `test`, na versão estável, gera o
+  perfil com `-coverpkg` (a suíte é outro pacote), imprime
+  `go tool cover -func` no log, publica `cover.out` e `cover.html` como
+  artefato `cobertura` e falha abaixo de 95%. Medida em 2026-09-11:
+  98,2% das instruções do pacote da raiz. (`ci.yml`)
+- **Corpus de fuzzing preservado**: no job `deep`, os três alvos rodam
+  sempre (`continue-on-error`), o diretório `tests/testdata/fuzz/` é
+  publicado como artefato `fuzz-corpus` (30 dias) quando existe, e um
+  passo final falha o job se alguma campanha tiver falhado. Antes, a
+  entrada que quebrava um alvo morria com o runner. (`ci.yml`)
+- **Exemplos executáveis** em `example_test.go`, na raiz, pacote externo
+  `loghubuuid_test`: `ExampleGenerateString`, `ExampleGenerator_Generate`,
+  `ExampleFromString`, `ExampleImportBinary`, `ExampleParse`,
+  `ExampleUUID_TimestampWithLevel`, `ExampleGenerateV5`,
+  `ExampleNullUUID` e `ExampleNewCryptoGenerator`. Os que declaram
+  saída usam só vetores fixos. Ficam na raiz porque o godoc só associa
+  exemplos ao pacote quando estão no mesmo diretório; a exceção à regra
+  da raiz mínima está registrada em `CLAUDE.md` e em `STARTHERE.md`.
+- Testes novos para os ramos que a medição de cobertura apontou:
+  `TestNullUUIDTextAndBinary` (texto e binário de `NullUUID`, com valor,
+  ausente e inválido), `TestMustPropagatesError`,
+  `TestVariantStringCoversAllCodes`, `TestNewHashMatchesGenerateHash`
+  (inclui resumo menor que 16 bytes) em `tests/api_test.go`;
+  `TestDomainString` e `TestInspectorsRejectOtherVersions` em
+  `tests/versions_test.go`.
 - Testes novos: `TestClockSequenceReuseNeverRepeats`,
   `TestSetClockSequenceRandomIsFresh`,
   `TestTimestampWithLevelDiscardsOutOfRangeFields` e casos adicionais em
@@ -128,6 +180,34 @@ e no Go 1.27.
 - `CLAUDE.md` atualizado: raiz com `CHANGELOG.md` e `.github/`, comandos
   de CI e de fuzzing, o piso de relógio por sequência, `Scan` com texto
   vazio e a regra sobre as travas de alocação sob `-race`.
+- `docs/git.md` virou `docs/RELEASE.md`: guia de release executável do
+  início ao fim (pré-requisitos, tag anotada, `gh release`, verificação
+  pelo proxy de módulos e a regra de imutabilidade das tags com o motivo),
+  sem configuração de máquina, sem `git config --global` e sem os blocos
+  repetidos ou vazios do rascunho anterior.
+- `SECURITY.md` na raiz: versões suportadas, relato privado pelo recurso
+  de aviso de segurança do GitHub, prazo de resposta e o resumo do modelo
+  de ameaça já documentado (gerador padrão não serve para segredo, o
+  UUIDv7 expõe o instante, as versões 1, 2 e 6 expõem nó e sequência,
+  `NewCryptoGenerator` para identificadores inadivinháveis). O recurso
+  "Report a vulnerability" precisa ser ligado nas configurações do
+  repositório, ação do dono.
+- `CONTRIBUTING.md` na raiz: as convenções de `CLAUDE.md` que valem para
+  humanos, os comandos de verificação local e a regra de que toda
+  mudança de comportamento vem com teste e entrada neste arquivo.
+- `docs/TEST-AND-BENCHMARK.md`: tabela de referência das versões 1, 4, 5
+  e 6, de `GenerateV1Parallel`, `Parse` e `ImportBinary` (Apple M2, Go
+  1.27, mediana de três execuções), com a leitura do custo do mutex em
+  paralelo (~148 ns contra ~10,8 ns do UUIDv7) e a confirmação de que o
+  piso por sequência não custa nada por geração (`GenerateV1` ~46,8 ns
+  contra ~48,3 ns na `v0.3.0`, mesma sessão); seções novas sobre
+  exemplos executáveis, linter, cobertura, os três jobs do CI e como
+  reproduzir uma falha de fuzzing a partir do artefato.
+- `STARTHERE.md`: árvore com `.golangci.yml`, `example_test.go`,
+  `SECURITY.md`, `CONTRIBUTING.md` e `docs/RELEASE.md`; caminhos de
+  leitura para release e contribuição. `README.md`: links para
+  `CONTRIBUTING.md` e `SECURITY.md`. `CLAUDE.md`: exceções da raiz,
+  comandos de linter e cobertura, descrição dos três jobs do CI.
 
 ---
 

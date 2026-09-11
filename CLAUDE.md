@@ -17,6 +17,13 @@ go test ./tests/ -v                                       # functional tests
 go test ./tests/ -run TestRoundTripString                # single test by name
 go test ./tests/ -run '^$' -bench Benchmark -benchmem     # benchmarks (no tests)
 go run ./tests/benchmark-bulk                             # generate 1,000,000 per level
+go test ./ -list Example                                  # list the runnable examples (example_test.go)
+golangci-lint run ./...                                   # linter, same config as CI (.golangci.yml, needs v2)
+```
+
+```bash
+go test ./tests/ ./ -short -coverpkg=github.com/patrickbrandao/go-loghub-uuid -coverprofile=cover.out   # cobertura
+go tool cover -func=cover.out                                                                            # por função
 ```
 
 ```bash
@@ -27,17 +34,21 @@ go test ./tests/ -run '^$' -fuzz FuzzParse -fuzztime 60s         # fuzzing do pa
 go test ./tests/ -run '^$' -fuzz FuzzNullUUIDJSON -fuzztime 60s  # fuzzing do JSON de NullUUID
 ```
 
-Note: tests live in `./tests/` and import the library by its **module path** (as an external consumer would), not as an internal package. Run `go test` against `./tests/`, not the repo root, except for `clock_internal_test.go`, the only root test file: it covers pure clock functions and the sequence-floor state machine, which cannot be driven from outside the package. Use `-short` to skip the 1M mass tests.
+Note: tests live in `./tests/` and import the library by its **module path** (as an external consumer would), not as an internal package. Run `go test` against `./tests/`, not the repo root, except for the two root test files: `clock_internal_test.go` covers pure clock functions and the sequence-floor state machine, which cannot be driven from outside the package; `example_test.go` (package `loghubuuid_test`) holds the `Example` functions, which godoc only associates with the package when they live in its directory. Examples with `// Output:` use only fixed vectors, never the clock or the PRNG. Use `-short` to skip the 1M mass tests.
+
+**Linter.** `.golangci.yml` (v2 format) enables `errcheck`, `govet`, `staticcheck`, `unused`, `ineffassign`, `gosec`, `errorlint`, `revive` (exported-comment rule) and `nolintlint`; `misspell` is off because the comments are Portuguese. `gosec` G115 (integer truncation) is excluded globally: byte packing by shift-and-truncate is the whole library, and the hot path must not gain masks to silence it. Every `//nolint` needs a linter name and a reason. Do not touch `uuid.go`/`conversion.go`/`import.go` to satisfy a lint finding without benchmarking before and after.
+
+**Coverage.** Measured with `-coverpkg` because the suite is a separate package; CI (stable only) prints `go tool cover -func`, uploads the HTML as an artifact and fails below 95% (`COVERAGE_MIN` in `ci.yml`). Only the `crypto/rand` failure branches (`strongSeed`, `fillRandom`, the `NewRandom`/`NewV7` recover paths), unreachable on Go 1.24+, remain uncovered by design; the rest is secondary parser error branches that fuzzing exercises.
 
 **Allocation locks are skipped under `-race`.** `sync.Pool` compiled with the race detector deliberately drops one in four items on `Put`, so `AllocsPerRun` sees the PRNG being rebuilt and the zero-alloc locks that depend on the default generator fail intermittently (seen on Go 1.22). `tests/race_enabled_test.go` / `race_disabled_test.go` expose `raceDetectorEnabled` via build tags; the three pool-dependent locks skip themselves under `-race`, and CI measures them in a separate step without the detector. Do not "fix" this by relaxing the locks.
 
-**CI.** `.github/workflows/ci.yml` runs gofmt (stable only), vet, build, `-race -short`, the allocation locks and a short `-benchmem` benchmark on Go 1.22 (the declared minimum in `go.mod`) and stable; a weekly job runs the full suite and 60 s of fuzzing per target. Never tag a release without a green `test` job on that commit. Keep `go.mod` at `go 1.22` unless a newer API is genuinely needed; CI on 1.22 is what enforces that.
+**CI.** `.github/workflows/ci.yml` has three jobs. `test` (Linux, Go 1.22 and stable) runs gofmt, vet, build, cross-compile plus vet for `windows/amd64`, `darwin/arm64` and `linux/arm64`, golangci-lint, `-race -short`, the allocation locks, a short `-benchmem` benchmark and the coverage report (the last three tool-dependent steps on stable only). `test-os` runs build, vet and `go test ./... -short` on `windows-latest` and `macos-latest`, but only on pull requests, tags, the weekly schedule and manual dispatch, to save the pricier runners. `deep` (weekly and on dispatch) runs the full suite and 60 s of fuzzing on each of the three targets with `continue-on-error`, uploads `tests/testdata/fuzz/` as the `fuzz-corpus` artifact whenever a campaign fails, and fails the job afterwards; reproduction steps are in `docs/TEST-AND-BENCHMARK.md`. Never tag a release without a green `test` job on that commit; the procedure is in `docs/RELEASE.md`. Keep `go.mod` at `go 1.22` unless a newer API is genuinely needed; CI on 1.22 is what enforces that.
 
 **Ordering has no monotonic counter.** Ordering is chronological *at the level's resolution*, with a **random** tie-break inside the same embedded instant. Generating a UUID is faster than most hosts' clock step, so consecutive UUIDs routinely tie (always, at Level1, whose resolution is the millisecond). Never write an ordering test that counts "regressions in a tight loop against a tolerated threshold" — that measures the host clock, not the library, and is why the old `TestMonotonicity` failed permanently on microsecond-clock hosts such as macOS. The clock-independent invariant lives in `TestOrderingFollowsEmbeddedTime`; `TestTieRateReport` reports the tie rate as a diagnostic; `TestMonotonicity` now sleeps between generations so the embedded instant genuinely advances.
 
 ## Architecture
 
-**Production code lives only in the repo root**, alongside `go.mod`, `README.md`, `STARTHERE.md`, `CHANGELOG.md`, `LICENSE`, this file, the single internal test `clock_internal_test.go`, and `.github/` (which GitHub requires at root). Everything else — `docs/`, `docs/SPEC.md`, `tests/` — is intentionally kept out of root so the production surface stays minimal. Preserve this separation: do not add other non-production files to root. `CHANGELOG.md` is the project history; every behavior change gets an entry under "Não publicado" with the file it touched.
+**Production code lives only in the repo root**, alongside `go.mod`, `README.md`, `STARTHERE.md`, `CHANGELOG.md`, `LICENSE`, `SECURITY.md` and `CONTRIBUTING.md` (GitHub reads both from root), this file, the two root test files `clock_internal_test.go` and `example_test.go`, the tool configuration `.golangci.yml`, and `.github/` (which GitHub requires at root). Everything else — `docs/`, `docs/SPEC.md`, `tests/` — is intentionally kept out of root so the production surface stays minimal. Preserve this separation: do not add other non-production files to root. `CHANGELOG.md` is the project history; every behavior change gets an entry under "Não publicado" with the file it touched.
 
 Each source file is a distinct concern.
 
@@ -101,4 +112,6 @@ Hot paths avoid allocations: binary generation does zero allocs; `String()` writ
 - [CHANGELOG.md](CHANGELOG.md) — history per version, rejected proposals with reasons, and the open design proposals (pool vs. runtime generator, optional monotonic generator, injectable clock, `AppendTo`/`Bytes`/`IsValid`). Check it before re-proposing any of those.
 - [docs/SPEC.md](docs/SPEC.md) — language-agnostic specification sufficient to reimplement the entire library from scratch across all supported UUID versions (1 to 8, parsing, concurrency, and serialization).
 - [docs/MIGRATION.md](docs/MIGRATION.md) — moving from `github.com/google/uuid`; lists what was intentionally not imported (`SetRand`, the rand pool, `SetNodeInterface`) and why.
+- [docs/RELEASE.md](docs/RELEASE.md) — release procedure: prerequisites, tag and `gh release`, post-publication check, and why tags are never moved.
+- [SECURITY.md](SECURITY.md) — private vulnerability reporting and the documented threat model; [CONTRIBUTING.md](CONTRIBUTING.md) — the subset of these rules that applies to external contributors.
 - [docs/](docs/) — quick use, full use, testing/benchmark guides.

@@ -25,7 +25,8 @@ que foi acrescentado vive em arquivos próprios e não o atravessa.
 go-loghub-uuid/
 │
 ├── go.mod                  # módulo: github.com/patrickbrandao/go-loghub-uuid
-├── .github/workflows/ci.yml # integração contínua (vet, build, testes com -race, fuzzing semanal)
+├── .github/workflows/ci.yml # integração contínua (lint, vet, build, testes, cobertura, Windows/macOS, fuzzing semanal)
+├── .golangci.yml           # configuração do linter (golangci-lint v2), a mesma do CI
 │
 │   # PRODUÇÃO — núcleo do UUIDv7 (caminho quente, sem trava, sem alocação)
 ├── uuid.go                 # tipos, Generator, geração por nível
@@ -48,12 +49,15 @@ go-loghub-uuid/
 ├── inspect.go              # Timestamp, GregorianTime, ClockSequence, NodeID
 ├── entropy.go              # NewGeneratorWithReader e NewCryptoGenerator
 ├── compat.go               # apelidos com os nomes do pacote google/uuid
-├── clock_internal_test.go  # teste interno das funções puras de relógio (único teste na raiz)
+├── clock_internal_test.go  # teste interno das funções puras de relógio
+├── example_test.go         # funções Example para o pkg.go.dev (pacote externo loghubuuid_test)
 │
 ├── README.md               # descrição rápida + uso rápido
 ├── STARTHERE.md            # este mapa
 ├── CHANGELOG.md            # histórico de mudanças por versão e propostas em aberto
 ├── LICENSE                 # MIT
+├── SECURITY.md             # como relatar vulnerabilidade e o modelo de ameaça documentado
+├── CONTRIBUTING.md         # convenções e verificação local para quem contribui
 ├── CLAUDE.md               # instruções de manutenção (ferramental)
 │
 ├── docs/                   # documentação de uso
@@ -62,7 +66,7 @@ go-loghub-uuid/
 │   ├── MIGRATION.md        # vindo do pacote github.com/google/uuid
 │   ├── TEST-AND-BENCHMARK.md
 │   ├── SPEC.md             # como reimplementar do zero (sem código)
-│   └── git.md
+│   └── RELEASE.md          # procedimento de publicação de versão
 │
 └── tests/                  # tudo que NÃO vai para produção
     ├── doc.go
@@ -77,17 +81,21 @@ go-loghub-uuid/
     ├── alloc_test.go           # trava de zero alocações
     ├── race_enabled_test.go    # tag race: sinaliza o detector de corrida
     ├── race_disabled_test.go   # tag !race: idem
-    ├── fuzz_test.go            # FuzzFromString e FuzzParse
+    ├── fuzz_test.go            # FuzzFromString, FuzzParse e FuzzNullUUIDJSON
     ├── benchmark_test.go       # benchmarks + massa de 1.000.000
     └── benchmark-bulk/
         └── main.go             # executável: go run ./tests/benchmark-bulk
 ```
 
 A **raiz** contém apenas o necessário para usar a biblioteca em produção
-(os arquivos `.go`, o `go.mod`, README/STARTHERE/CHANGELOG/LICENSE) mais o arquivo
-de suporte ao desenvolvimento (`CLAUDE.md`), o teste interno de funções
-puras do relógio (`clock_internal_test.go`) e a configuração de
-integração contínua em `.github/`, que o GitHub exige nesse local.
+(os arquivos `.go`, o `go.mod`, README/STARTHERE/CHANGELOG/LICENSE) mais
+os arquivos que o GitHub ou o ferramental exigem nesse local: `SECURITY.md`
+e `CONTRIBUTING.md` (abas de segurança e de contribuição), `CLAUDE.md`
+(instruções de manutenção), `.golangci.yml` (configuração do linter) e a
+integração contínua em `.github/`. Dois arquivos de teste também ficam na
+raiz por necessidade: `clock_internal_test.go`, que exercita funções
+internas do relógio, e `example_test.go`, cujas funções `Example` só
+aparecem na documentação do pacote se estiverem no mesmo diretório.
 Documentação, especificação, relatórios e testes ficam em pastas
 próprias.
 
@@ -257,6 +265,9 @@ por string continua cronológica.
 - **Quero as outras versões**: `clock.go` primeiro (o relógio
   compartilhado), depois `version1.go`.
 - **Venho do pacote google/uuid**: [docs/MIGRATION.md](docs/MIGRATION.md)
+- **Vou publicar uma versão**: [docs/RELEASE.md](docs/RELEASE.md)
+- **Vou contribuir ou relatar um problema de segurança**:
+  [CONTRIBUTING.md](CONTRIBUTING.md) e [SECURITY.md](SECURITY.md)
 
 ---
 
@@ -269,6 +280,8 @@ go vet ./...                                        # análise estática
 go test ./tests/ -v                                 # testes
 go test ./tests/ -run '^$' -bench Benchmark -benchmem   # benchmarks
 go run ./tests/benchmark-bulk                       # 1.000.000 por nível
+golangci-lint run ./...                             # linter (configuração em .golangci.yml)
+go test ./ -run Example -v                          # exemplos executáveis
 ```
 
 ---

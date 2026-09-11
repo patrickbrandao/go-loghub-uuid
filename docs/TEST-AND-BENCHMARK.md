@@ -69,27 +69,133 @@ go test ./tests/ -run '^$' -fuzz FuzzFromString -fuzztime 60s
 
 # Fuzz do analisador permissivo (quatro formatos)
 go test ./tests/ -run '^$' -fuzz FuzzParse -fuzztime 60s
+
+# Fuzz do leitor de JSON de NullUUID (concordância com o tipo UUID)
+go test ./tests/ -run '^$' -fuzz FuzzNullUUIDJSON -fuzztime 60s
 ```
+
+Quando uma campanha encontra uma entrada que quebra o alvo, o Go a grava
+em `tests/testdata/fuzz/<Alvo>/<hash>` (diretório ignorado pelo Git) e a
+partir daí ela passa a rodar como caso de teste comum, sem `-fuzz`:
+
+```bash
+go test ./tests/ -run 'FuzzParse/<hash>' -v
+```
+
+### Exemplos executáveis
+
+As funções `Example` de `example_test.go`, na raiz, reproduzem trechos
+da documentação de uso e são compiladas e executadas pela suíte; as que
+declaram `// Output:` usam só vetores fixos. Elas aparecem na página do
+pacote em pkg.go.dev.
+
+```bash
+go test ./ -run Example -v     # executa
+go test ./ -list Example       # lista
+```
+
+### Linter
+
+Além do `go vet`, o projeto roda o `golangci-lint` (versão 2) com a
+configuração de `.golangci.yml`, a mesma usada pelo CI. Instalação e
+uso:
+
+```bash
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+golangci-lint run ./...
+```
+
+Toda marcação `//nolint` precisa nomear o linter e trazer o motivo; o
+próprio linter (`nolintlint`) recusa marcações sem motivo ou que não
+silenciam nada. A regra `G115` do `gosec` (truncamento em conversão de
+inteiro) está desligada de propósito: empacotar campos em bytes por
+deslocamento e truncamento é o que a biblioteca faz, e o caminho quente
+não ganha máscaras para calar um aviso.
+
+### Cobertura
+
+A suíte vive em `./tests/`, outro pacote, então o `-cover` padrão não
+conta o pacote da raiz: é preciso `-coverpkg`.
+
+```bash
+go test ./tests/ ./ -short -coverpkg=github.com/patrickbrandao/go-loghub-uuid -coverprofile=cover.out
+go tool cover -func=cover.out            # por função, com o total na última linha
+go tool cover -html=cover.out            # abre o relatório no navegador
+```
+
+O CI publica o relatório (`cover.out` e `cover.html`) como artefato
+`cobertura` do job `test` e falha se o total ficar abaixo de 95%. Os
+ramos que ficam de fora por decisão, e não por esquecimento: as falhas
+de leitura de `crypto/rand` (`strongSeed`, `fillRandom` e os `recover`
+de `NewRandom` e `NewV7`), inalcançáveis a partir do Go 1.24. O restante
+não coberto são ramos de erro secundários dos analisadores, já
+exercitados pelo fuzzing.
 
 ### Integração contínua
 
-O fluxo em `.github/workflows/ci.yml` executa automaticamente, a cada
-push, pull request e tag, na versão mínima declarada em `go.mod` (1.22)
-e na versão estável mais recente:
+O arquivo `.github/workflows/ci.yml` define três jobs.
+
+**`test`**, em Linux, a cada push, pull request e tag, na versão mínima
+declarada em `go.mod` (1.22) e na versão estável mais recente:
 
 ```bash
 gofmt -l .                      # só na versão estável
 go vet ./...
 go build ./...
+GOOS=windows GOARCH=amd64 go build ./... && go vet ./...   # idem para darwin/arm64 e linux/arm64
+golangci-lint run ./...         # só na versão estável
 go test ./... -race -short
 go test ./tests/ -short -run 'Allocations|SingleAllocation' -v   # travas de alocação, sem -race
 go test ./tests/ -run '^$' -bench 'BenchmarkGenerateLevel|BenchmarkFromString' -benchmem -benchtime 200000x
+go test ./tests/ ./ -short -coverpkg=... -coverprofile=cover.out   # só na versão estável; falha abaixo de 95%
 ```
 
-Toda segunda-feira, e sob demanda pela aba Actions, um segundo fluxo roda
-a suíte completa (com os testes de massa de 1.000.000) sob o detector de
-corrida e 60 segundos de fuzzing em cada analisador. Uma tag só deve ser
-publicada com o fluxo `test` verde no commit correspondente.
+**`test-os`**, em `windows-latest` e `macos-latest` com a versão estável:
+`go vet`, `go build` e `go test ./... -short`, sem `-race` (no Windows o
+detector exige CGO e é bem mais lento; a corrida já é verificada em
+Linux). Para poupar os runners mais caros, este job não roda a cada push
+em `main`: só em pull request, tag, no agendamento semanal e sob demanda.
+É ele que verifica a resolução do relógio e o comportamento específico de
+cada sistema (por exemplo, `GenerateV2Person` no Windows).
+
+**`deep`**, toda segunda-feira e sob demanda pela aba Actions: a suíte
+completa (com os testes de massa de 1.000.000) sob o detector de corrida
+e 60 segundos de fuzzing em cada um dos três alvos. Os três rodam sempre,
+mesmo que um falhe, e o job falha ao final se algum tiver falhado.
+
+Para disparar `test-os` e `deep` manualmente:
+
+```bash
+gh workflow run ci.yml
+```
+
+Uma tag só deve ser publicada com o fluxo `test` verde no commit
+correspondente; o procedimento está em [RELEASE.md](RELEASE.md).
+
+#### Reproduzir uma falha de fuzzing do CI
+
+Quando uma campanha do job `deep` falha, a entrada que quebrou o alvo é
+publicada como artefato `fuzz-corpus` do job (retenção de 30 dias), com a
+mesma árvore que o Go usa localmente: `<Alvo>/<hash>`. Para reproduzir:
+
+1. Baixe o artefato pela página da execução na aba Actions, ou pela CLI:
+
+   ```bash
+   gh run list --workflow ci.yml --limit 5          # identifique a execução
+   gh run download <id> --name fuzz-corpus --dir tests/testdata/fuzz
+   ```
+
+2. Confirme que o arquivo ficou em `tests/testdata/fuzz/<Alvo>/<hash>` e
+   rode só ele, como caso de teste comum:
+
+   ```bash
+   go test ./tests/ -run 'FuzzParse/<hash>' -v
+   ```
+
+3. Corrija o defeito e transforme a entrada em caso de regressão
+   permanente com `f.Add(...)` na função de fuzzing correspondente em
+   `tests/fuzz_test.go`; o diretório `tests/testdata/fuzz/` continua fora
+   do Git.
 
 ---
 
@@ -104,10 +210,14 @@ Mede nanossegundos por operação e alocações:
 - `BenchmarkGenerateLevel1/2/3` — geração binária por nível.
 - `BenchmarkGenerateStringLevel1/3` — geração com serialização em string.
 - `BenchmarkGenerateLevel3Parallel` — throughput com várias goroutines.
+- `BenchmarkFromString` — análise estrita no formato canônico.
+- `BenchmarkImportBinary` — leitura dos campos de tempo.
 - `BenchmarkGenerateV1/V4/V5/V6` — as demais versões de UUID.
 - `BenchmarkGenerateV1Parallel` — custo do lock compartilhado pelas
   versões 1, 2 e 6, em contraste com o UUIDv7, que não tem lock.
 - `BenchmarkParse` — análise permissiva no formato canônico.
+
+Os números de referência de todos eles estão na seção 4.
 
 O caminho do UUIDv7 não foi tocado pela inclusão das outras versões. Para
 conferir isso em uma máquina qualquer, compare os benchmarks do UUIDv7
@@ -192,6 +302,52 @@ os microssegundos, então basta **uma** palavra de 64 bits do gerador
 pseudoaleatório; só o Nível 1 (e os níveis desconhecidos, que se
 comportam como ele) precisa de **duas**. A diferença é exatamente o custo
 de um sorteio extra.
+
+#### Demais versões e API de apoio (Host A, 2026-09-11)
+
+Medido no mesmo host, com Go 1.27.0 e `GOMAXPROCS=8`, por
+`go test ./tests/ -run '^$' -bench 'BenchmarkGenerateV|BenchmarkParse|BenchmarkImportBinary' -benchmem -benchtime 2s -count 3`;
+cada linha é a mediana das três execuções.
+
+| Benchmark                 |  ns/op | alloc/op | bytes/op |
+| ------------------------- | -----: | -------: | -------: |
+| `GenerateV1`              |  ~46,8 |        0 |        0 |
+| `GenerateV6`              |  ~46,7 |        0 |        0 |
+| `GenerateV1Parallel`      | ~148,1 |        0 |        0 |
+| `GenerateV4`              |  ~13,5 |        0 |        0 |
+| `GenerateV5`              | ~116,5 |        3 |      152 |
+| `Parse` (canônico)        |  ~36,5 |        0 |        0 |
+| `ImportBinary`            |   ~1,7 |        0 |        0 |
+
+Para comparar com o UUIDv7 na mesma sessão: `GenerateLevel1` ~44,8 ns,
+`GenerateLevel3` ~42,9 ns e `GenerateLevel3Parallel` ~10,8 ns, todos sem
+alocação.
+
+Leitura dos números:
+
+- **As versões 1 e 6 custam o mesmo que o UUIDv7 em série** (a diferença
+  de 2 a 4 ns é a trava e o avanço do relógio interno) e também não
+  alocam. A diferença aparece **em paralelo**: `GenerateV1Parallel` fica
+  em ~148 ns por UUID com 8 goroutines, contra ~10,8 ns de
+  `GenerateLevel3Parallel`. É o custo do mutex compartilhado pelas
+  versões 1, 2 e 6, que serializa todas as goroutines; o UUIDv7 não tem
+  trava e escala com os núcleos. Quem precisa de ordenação com alto
+  throughput deve preferir a versão 7 (ou a 6 só em baixo volume).
+- **O piso de relógio por sequência não custa nada por geração.**
+  `GenerateV1` na `v0.3.0`, medida na mesma sessão e no mesmo host, deu
+  ~48,3 ns em série e ~165,5 ns em paralelo; a versão atual, com o mapa
+  de pisos em `clock.go`, deu ~46,8 e ~148,1. O mapa só é tocado na
+  troca de sequência, nunca na geração, e os números confirmam.
+- **A versão 4 é a mais barata** (~13,5 ns): não lê o relógio, só
+  sorteia duas palavras e ajusta dois bytes. O custo das versões
+  baseadas em tempo é majoritariamente `time.Now()`.
+- **A versão 5 é a única que aloca**: três alocações e 152 bytes por
+  chamada vêm do `sha1.New()` e do `Sum(nil)` da biblioteca padrão, não
+  desta biblioteca. A versão 3 (MD5) tem perfil equivalente. Ambas são
+  determinísticas e raramente estão em caminho quente.
+- `Parse` custa ~5 ns a mais que `FromString` (~31,6 ns) pelo despacho
+  entre os quatro formatos; nenhum dos dois aloca. `ImportBinary` é
+  aritmética pura sobre 10 bytes.
 
 ### Host B — VM modesta, Intel Xeon @ 2.80 GHz, Go 1.22, núcleo único
 
