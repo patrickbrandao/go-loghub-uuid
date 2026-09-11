@@ -19,6 +19,12 @@ Convenções de cada seção:
 
 ## [Não publicado]
 
+Nada ainda.
+
+---
+
+## [v0.4.0] — 2026-09-11
+
 Passagem de auditoria estática de 2026-09-10 sobre a `v0.3.0`: seis
 problemas encontrados e corrigidos, todos verificados com `gofmt`,
 `go vet` e a suíte sob detector de corrida no Go 1.22 (mínimo declarado)
@@ -525,7 +531,8 @@ de API foram feitas (veja a seção "Não publicado"); o gerador monotônico
 e o relógio injetável foram recusados, com os motivos registrados em
 "Decisões" abaixo.
 
-[Não publicado]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.3.0...HEAD
+[Não publicado]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.1.0...v0.2.0
 [v0.1.0]: https://github.com/patrickbrandao/go-loghub-uuid/releases/tag/v0.1.0
