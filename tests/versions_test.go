@@ -161,13 +161,14 @@ func TestV6IsLexicographicallyOrdered(t *testing.T) {
 // TestTimestampRoundTrip confere que o instante extraído das versões 1, 6
 // e 7 fica próximo do relógio do sistema no momento da geração.
 func TestTimestampRoundTrip(t *testing.T) {
+	withIsolatedClockState(t)
+
 	// Os testes de volume anteriores deixam o relógio interno adiantado:
 	// cada geração dentro do mesmo tique avança 100 nanossegundos. Sortear
 	// uma sequência inédita (-1) descarta esse acúmulo, que é a forma
 	// prevista para ressincronizar com o relógio do sistema. Veja
 	// TestTimeBasedClockDrift.
 	uuid.SetClockSequence(-1)
-	defer uuid.SetClockSequence(-1)
 
 	for _, tc := range []struct {
 		name     string
@@ -291,8 +292,8 @@ func TestTimestampWithLevelDiscardsOutOfRangeFields(t *testing.T) {
 // TestClockSequenceIsRecoverable confere que a sequência fixada pelo
 // chamador aparece nos UUIDs gerados em seguida.
 func TestClockSequenceIsRecoverable(t *testing.T) {
+	withIsolatedClockState(t)
 	uuid.SetClockSequence(0x1234)
-	defer uuid.SetClockSequence(-1)
 
 	if got := uuid.ClockSequence(); got != 0x1234 {
 		t.Fatalf("ClockSequence: %#x, esperado %#x", got, 0x1234)
@@ -312,6 +313,8 @@ func TestClockSequenceIsRecoverable(t *testing.T) {
 // chamador aparece nos UUIDs gerados em seguida, e que NodeID devolve uma
 // cópia, não o estado interno.
 func TestNodeIDIsRecoverable(t *testing.T) {
+	withIsolatedClockState(t)
+
 	wanted := []byte{0x02, 0x11, 0x22, 0x33, 0x44, 0x55}
 	if !uuid.SetNodeID(wanted) {
 		t.Fatal("SetNodeID recusou 6 bytes válidos")
@@ -343,6 +346,8 @@ func TestNodeIDIsRecoverable(t *testing.T) {
 // TestV2CarriesDomainAndID confere que a versão 2 grava e devolve o
 // domínio e o identificador local.
 func TestV2CarriesDomainAndID(t *testing.T) {
+	withIsolatedClockState(t)
+
 	u := uuid.GenerateV2(uuid.Group, 0xDEADBEEF)
 
 	domain, ok := u.Domain()
@@ -359,7 +364,6 @@ func TestV2CarriesDomainAndID(t *testing.T) {
 
 	// A sequência da versão 2 tem só 6 bits: o byte baixo virou domínio.
 	uuid.SetClockSequence(0x1234)
-	defer uuid.SetClockSequence(-1)
 	seq, ok := uuid.GenerateV2(uuid.Org, 1).ClockSequence()
 	if !ok || seq != 0x1234>>8 {
 		t.Errorf("ClockSequence na versão 2: %#x, ok=%v, esperado %#x", seq, ok, 0x1234>>8)
@@ -391,10 +395,10 @@ func TestV4Uniqueness(t *testing.T) {
 // de tiques consumidos e que a ordem nunca regride.
 func TestTimeBasedClockDrift(t *testing.T) {
 	const burst = 200_000
+	withIsolatedClockState(t)
 
 	// Sequência inédita: começa sem adiantamento acumulado.
 	uuid.SetClockSequence(-1)
-	defer uuid.SetClockSequence(-1)
 
 	previous := uuid.GenerateV6()
 	for i := 1; i < burst; i++ {
@@ -424,8 +428,8 @@ func TestTimeBasedClockDrift(t *testing.T) {
 // uso, logo após uma rajada, não repete UUIDs de versão 1.
 func TestSetNodeIDSameNodeKeepsUniqueness(t *testing.T) {
 	const burst = 200_000
+	withIsolatedClockState(t)
 	uuid.SetClockSequence(-1)
-	defer uuid.SetClockSequence(-1)
 
 	seen := make(map[uuid.UUID]struct{}, burst+1_000)
 	for i := 0; i < burst; i++ {
@@ -455,8 +459,7 @@ func TestSetNodeIDSameNodeKeepsUniqueness(t *testing.T) {
 func TestClockSequenceReuseNeverRepeats(t *testing.T) {
 	const burst = 200_000
 	const seqA, seqB = 0x0AAA, 0x0BBB
-
-	defer uuid.SetClockSequence(-1)
+	withIsolatedClockState(t)
 
 	seen := make(map[uuid.UUID]struct{}, burst+2_000)
 	record := func(name string, u uuid.UUID) {
@@ -502,7 +505,7 @@ func TestClockSequenceReuseNeverRepeats(t *testing.T) {
 // sempre sorteia uma sequência ainda não usada neste processo, e que só
 // essa troca para uma sequência inédita descarta o adiantamento.
 func TestSetClockSequenceRandomIsFresh(t *testing.T) {
-	defer uuid.SetClockSequence(-1)
+	withIsolatedClockState(t)
 
 	used := map[int]bool{}
 	for _, explicit := range []int{0x0001, 0x0002, 0x0003} {
@@ -563,8 +566,8 @@ func TestV2RepeatsWithinWindow(t *testing.T) {
 // 14 bits de sequência iguais aos de ClockSequence, com a variante RFC
 // nos dois bits altos.
 func TestGetTimeSequenceFormat(t *testing.T) {
+	withIsolatedClockState(t)
 	uuid.SetClockSequence(0x1234)
-	defer uuid.SetClockSequence(-1)
 
 	_, seq := uuid.GetTime()
 	if int(seq&0x3FFF) != uuid.ClockSequence() {
