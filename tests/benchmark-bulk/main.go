@@ -27,10 +27,10 @@ func main() {
 
 	fmt.Printf("== Benchmark em massa — %d UUIDs por cenário ==\n\n", *n)
 	// Passagem de aquecimento, descartada. Sem ela o primeiro cenário
-	// medido paga sozinho o custo de aquecer cache de instruções,
-	// escalonamento de frequência da CPU e preenchimento do sync.Pool, e
-	// aparece artificialmente mais lento que os demais — viés que já
-	// distorceu as tabelas publicadas em docs/TEST-AND-BENCHMARK.md.
+	// medido paga sozinho o custo de aquecer cache de instruções e
+	// escalonamento de frequência da CPU, e aparece artificialmente mais
+	// lento que os demais — viés que já distorceu as tabelas publicadas
+	// em docs/TEST-AND-BENCHMARK.md.
 	warmup := *n / 10
 	if warmup > 100_000 {
 		warmup = 100_000

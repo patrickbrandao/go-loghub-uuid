@@ -17,8 +17,9 @@ func GenerateV8(data [16]byte) UUID {
 // GenerateV8 produz um UUID de versão 8 com os 122 bits livres preenchidos
 // pela fonte de entropia deste Generator.
 //
-// No gerador padrão a fonte é PCG, estatística e previsível: não use o
-// resultado como segredo. Veja o aviso em GenerateV4.
+// No gerador padrão a fonte é o ChaCha8 do runtime do Go; para segredos,
+// prefira um gerador com entropia criptográfica. Veja o aviso em
+// GenerateV4.
 //
 // O resultado é indistinguível de um UUIDv4 quanto ao conteúdo; muda
 // apenas o número de versão. Use quando precisar marcar identificadores

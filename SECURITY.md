@@ -34,9 +34,10 @@ considerados vulnerabilidades:
 
 - **O gerador padrão não serve para segredos.** `NewGenerator` e as
   funções de pacote `Generate`, `GenerateString`, `GenerateV4` e
-  `GenerateV8Random` usam PCG, um gerador pseudoaleatório estatístico.
-  Quem observar alguns identificadores consegue reconstruir o estado
-  interno e prever os seguintes. Para identificadores que precisem ser
+  `GenerateV8Random` leem do gerador do runtime do Go (ChaCha8 por
+  thread). É resistente a predição, mas a documentação do Go recomenda
+  `crypto/rand` para uso sensível a segurança e a biblioteca não promete
+  força criptográfica nessa fonte. Para identificadores que precisem ser
   inadivinháveis (token de sessão, link privado, chave de recuperação),
   use `NewCryptoGenerator`, `NewGeneratorWithReader` com `crypto/rand`,
   ou os apelidos de compatibilidade `New`, `NewString`, `NewRandom` e

@@ -57,8 +57,9 @@ type Time struct {
 g := uuid.NewGenerator()
 ```
 
-Internamente mantém um pool de PRNGs PCG (um por thread em uso), cada um
-semeado de `crypto/rand`. Sem contenção de lock; ideal para alto volume.
+A entropia vem do gerador do runtime do Go (`math/rand/v2`): uma
+instância de ChaCha8 por thread, semeada pelo sistema operacional na
+carga do programa. Sem contenção de lock; ideal para alto volume.
 
 ### Gerador com entropia personalizada
 
@@ -87,15 +88,17 @@ vez por UUID nos níveis 2 e 3 e duas vezes no nível 1. Passar `nil` faz
 `NewGeneratorWith` entrar em pânico imediatamente, para que o erro de
 configuração apareça no boot.
 
-> **Quando isto deixa de ser opcional.** O gerador padrão usa PCG, um
-> PRNG estatístico e **não** criptográfico: a partir de poucas amostras
-> observadas é possível reconstruir o estado interno e prever os UUIDs
-> seguintes. Somado a isso, todo UUIDv7 revela o instante de criação por
-> construção. Se o identificador precisar ser inadivinhável — token de
-> sessão, link privado, chave de recuperação — o gerador com entropia
-> criptográfica acima é **requisito**, não conveniência. Para chave
-> primária, identificador de registro e correlação de log, o gerador
-> padrão é adequado.
+> **Quando isto deixa de ser opcional.** O gerador padrão usa o ChaCha8
+> do runtime, que resiste a predição — bem mais forte que o PCG usado
+> até a `v0.3.0` —, mas a própria documentação do Go recomenda
+> `crypto/rand` para uso sensível a segurança, e a biblioteca não promete
+> força criptográfica nessa fonte. Somado a isso, todo UUIDv7 revela o
+> instante de criação por construção, qualquer que seja a entropia. Se o
+> identificador precisar ser inadivinhável — token de sessão, link
+> privado, chave de recuperação — o gerador com entropia criptográfica
+> acima é **requisito**, não conveniência. Para chave primária,
+> identificador de registro e correlação de log, o gerador padrão é
+> adequado.
 
 ---
 

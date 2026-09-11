@@ -48,12 +48,12 @@ o detector de corrida sem registrar alertas:
 go test ./... -race
 ```
 
-Sob o detector, as travas de alocação que dependem do gerador padrão
-(`TestGenerateZeroAllocations`, `TestGenerateStringSingleAllocation` e
-`TestGenerateV4ZeroAllocations`) são puladas: o `sync.Pool` compilado com
-`-race` descarta de propósito um em cada quatro itens devolvidos, e as
-realocações resultantes seriam contadas como se fossem da biblioteca.
-Meça as alocações sem o detector:
+As travas de alocação passam com e sem o detector. Até a `v0.3.0` três
+delas eram puladas sob `-race`, porque o `sync.Pool` do gerador padrão
+descartava itens de propósito com o detector ativo e as realocações
+entravam na conta; com o pool removido em favor do gerador do runtime,
+não há mais estado a recriar. O passo dedicado, sem detector, continua
+sendo a medição de referência:
 
 ```bash
 go test ./tests/ -short -run 'Allocations|SingleAllocation' -v
@@ -260,9 +260,9 @@ nível, em binário e string.
 > **Sobre as tabelas anteriores.** Até a revisão de 2026-08-27, tanto
 > `TestMassOneMillion` quanto `benchmark-bulk` mediam os cenários em
 > sequência **sem passagem de aquecimento**. O primeiro cenário medido
-> pagava sozinho o custo de aquecer cache de instruções, escalonamento de
-> frequência da CPU e preenchimento do `sync.Pool` — e como o Nível 1 é
-> sempre o primeiro, aparecia mais lento do que realmente era. Ambos os
+> pagava sozinho o custo de aquecer cache de instruções e o escalonamento
+> de frequência da CPU — e como o Nível 1 é sempre o primeiro, aparecia
+> mais lento do que realmente era. Ambos os
 > medidores passaram a descartar uma passagem de aquecimento, e o cálculo
 > da taxa deixou de usar `dur.Milliseconds()+1` (que arredondava para
 > baixo e ainda somava 1 ms) em favor de nanossegundos. Os números abaixo
@@ -374,6 +374,45 @@ atingida com folga.
 leitura do relógio (`time.Now()`), e esse custo é irredutível — a
 precisão sub-milissegundo é a razão de ser da biblioteca. Micro-otimizar
 a montagem dos 16 bytes não move o número.
+
+### Troca da fonte de entropia do gerador padrão
+
+Medição da substituição do `sync.Pool` de PRNGs PCG pelo gerador do
+runtime (`math/rand/v2`, ChaCha8 por thread). Apple M2, macOS, Go 1.27,
+`GOGC=off GOMAXPROCS=4`, média de seis execuções de 5.000.000 iterações
+cada:
+
+```bash
+GOGC=off GOMAXPROCS=4 go test ./tests/ -run '^$' -bench 'BenchmarkGenerate' \
+  -benchmem -benchtime 5000000x -count 6
+```
+
+| Benchmark                  | Pool + PCG | ChaCha8 do runtime |      Δ |
+| -------------------------- | ---------: | -----------------: | -----: |
+| `GenerateLevel1`           |   45,55 ns |           44,85 ns |  -1,5% |
+| `GenerateLevel2`           |   41,46 ns |           39,31 ns |  -5,2% |
+| `GenerateLevel3`           |   42,05 ns |           39,80 ns |  -5,4% |
+| `GenerateLevel3Parallel`   |   16,93 ns |           11,06 ns | -34,7% |
+| `GenerateStringLevel1`     |   69,92 ns |           66,71 ns |  -4,6% |
+| `GenerateStringLevel3`     |   65,73 ns |           67,06 ns |  +2,0% |
+| `GenerateV4`               |   12,36 ns |           11,65 ns |  -5,7% |
+| `GenerateV1`               |   44,70 ns |           44,63 ns |  -0,2% |
+| `GenerateV6`               |   44,58 ns |           44,73 ns |  +0,3% |
+| `GenerateV5`               |   91,70 ns |           91,89 ns |  +0,2% |
+| `GenerateV1Parallel`       |  131,40 ns |          131,45 ns |  +0,0% |
+
+Leitura dos números:
+
+- **O ganho real está no paralelo**: -34,7% no `Level3Parallel`. O par
+  `Get`/`Put` do pool era o gargalo sob concorrência; o gerador do
+  runtime não tem nenhum.
+- **Em série o ganho é modesto**, 2% a 6%, porque `time.Now()` domina o
+  custo. `GenerateV4`, que não lê o relógio, mostra o efeito isolado da
+  fonte de entropia: -5,7%.
+- **As versões 1, 2, 5 e 6 não mudam**, como esperado: nenhuma delas usa
+  a fonte de entropia do `Generator`. As variações de ±0,3% são ruído, e
+  o mesmo vale para o +2,0% de `GenerateStringLevel3`, que destoa do
+  `GenerateLevel3` (-5,4%) logo acima.
 
 ---
 

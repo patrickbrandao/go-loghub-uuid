@@ -129,8 +129,9 @@ uuid.SetRand(crand.Reader)
 var Gen = uuid.NewCryptoGenerator()
 ```
 
-**Sem `EnableRandPool` e `DisableRandPool`.** O gerador padrão já mantém
-um pool de PRNGs por thread, sem trava global. Não há o que ligar.
+**Sem `EnableRandPool` e `DisableRandPool`.** O gerador padrão já lê do
+gerador do runtime do Go, que tem uma instância por thread e nenhuma
+trava global. Não há o que ligar.
 
 **Sem `SetNodeInterface` e `NodeInterface`.** Ler interfaces de rede
 arrastaria o pacote `net` para dentro de quem só gera UUIDv7. O nó

@@ -129,12 +129,14 @@ func newID() string { return Gen.GenerateString(uuid.Level3) }
 ## Aviso de segurança
 
 O gerador padrão (`NewGenerator`, e as funções de pacote `Generate`,
-`GenerateString`, `GenerateV4` e `GenerateV8Random`) usa um PRNG
-**estatístico** (PCG), não criptográfico. Os apelidos de compatibilidade
-`New`, `NewString`, `NewRandom` e `NewV7` leem de `crypto/rand`.
-Quem observar alguns identificadores consegue reconstruir o estado
-interno e prever os seguintes; além disso, todo UUIDv7 expõe o instante
-de criação por construção.
+`GenerateString`, `GenerateV4` e `GenerateV8Random`) tira entropia do
+gerador do runtime do Go, uma instância de **ChaCha8** por thread semeada
+pelo sistema operacional. É uma cifra de fluxo, resistente a predição, e
+não o PRNG estatístico usado até a `v0.3.0`. Ainda assim, a própria
+documentação do Go recomenda `crypto/rand` para uso sensível a
+segurança — os apelidos de compatibilidade `New`, `NewString`,
+`NewRandom` e `NewV7` já leem de lá. E, independentemente da fonte, todo
+UUIDv7 expõe o instante de criação por construção.
 
 **Não use estes UUIDs como segredo** — token de sessão, link privado,
 chave de recuperação ou senha de uso único. Para identificadores que

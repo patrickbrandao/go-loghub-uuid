@@ -111,9 +111,10 @@ jobs:
         run: go test ./... -race -short
 
       - name: Travas de alocação (sem detector de corrida)
-        # As travas que dependem do gerador padrão são puladas sob -race,
-        # porque o sync.Pool descarta itens ao acaso com o detector ativo.
-        # Este passo é a medição que vale.
+        # O passo anterior já roda estas travas sob -race. Este as repete
+        # sem o detector, que é a medição de referência: o detector muda o
+        # código gerado e pode contar alocações que não existem em
+        # produção.
         run: go test ./tests/ -short -run 'Allocations|SingleAllocation' -v
 
       - name: Alocações no caminho quente (benchmark curto)

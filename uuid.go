@@ -27,10 +27,7 @@
 package loghubuuid
 
 import (
-	crand "crypto/rand"
-	"encoding/binary"
 	rand "math/rand/v2"
-	"sync"
 	"time"
 )
 
@@ -56,9 +53,9 @@ type UUID [16]byte
 // Generator é o objeto que produz UUIDs. Deve ser criado uma única vez,
 // no boot da aplicação, e pode ser compartilhado por muitas goroutines.
 //
-// Internamente o gerador padrão mantém um pool de geradores
-// pseudoaleatórios rápidos (PCG) — um por thread em uso — eliminando
-// contenção de lock e permitindo gerar milhões de IDs por segundo.
+// O gerador padrão tira entropia do gerador do runtime do Go (ChaCha8,
+// uma instância por thread, semeada pelo sistema operacional), que não
+// tem trava compartilhada e permite gerar milhões de IDs por segundo.
 //
 // O valor zero de Generator NÃO é utilizável: use NewGenerator ou
 // NewGeneratorWith. Por segurança, um Generator sem fonte de entropia
@@ -76,38 +73,23 @@ type Generator struct {
 
 // NewGenerator cria um Generator rápido e seguro para concorrência.
 //
-// A entropia em tempo de execução vem de geradores PCG mantidos em um
-// sync.Pool (sem locks compartilhados). Cada PCG é semeado uma única
-// vez, na criação, a partir de crypto/rand (alta qualidade), e depois
-// avança de forma puramente local — barato e contention-free.
+// A entropia em tempo de execução vem das funções de pacote de
+// math/rand/v2, que desde o Go 1.22 leem do gerador do runtime: uma
+// instância de ChaCha8 por thread, semeada pelo sistema operacional na
+// carga do programa. Não há trava compartilhada nem estado a manter, e a
+// leitura é mais barata que a de um pool.
 //
-// ATENÇÃO — o PCG é um gerador pseudoaleatório estatístico, NÃO
-// criptográfico: quem observar alguns UUIDs produzidos por este gerador
-// consegue reconstruir o estado interno e prever os seguintes. Além
-// disso, todo UUIDv7 expõe o instante de criação por construção. Não use
-// estes identificadores como segredo (token de sessão, link privado,
-// chave de recuperação); para esse fim, monte o gerador com entropia
-// criptográfica através de NewGeneratorWith.
+// ATENÇÃO — o ChaCha8 é uma cifra de fluxo e resiste a predição, mas a
+// própria documentação do Go recomenda crypto/rand para uso sensível a
+// segurança. Além disso, todo UUIDv7 expõe o instante de criação por
+// construção, independentemente da fonte de entropia. Não use estes
+// identificadores como segredo (token de sessão, link privado, chave de
+// recuperação); para esse fim, use NewCryptoGenerator ou monte o gerador
+// com NewGeneratorWith.
 func NewGenerator() *Generator {
-	pool := &sync.Pool{
-		New: func() any {
-			// Semeia cada PRNG do pool com bytes de crypto/rand.
-			return rand.New(rand.NewPCG(strongSeed(), strongSeed())) //nolint:gosec // PRNG estatístico por projeto; ver o aviso acima e NewCryptoGenerator
-		},
-	}
 	return &Generator{
-		oneWord: func() uint64 {
-			r := pool.Get().(*rand.Rand)
-			a := r.Uint64()
-			pool.Put(r)
-			return a
-		},
-		twoWords: func() (uint64, uint64) {
-			r := pool.Get().(*rand.Rand)
-			a, b := r.Uint64(), r.Uint64()
-			pool.Put(r)
-			return a, b
-		},
+		oneWord:  rand.Uint64,
+		twoWords: func() (uint64, uint64) { return rand.Uint64(), rand.Uint64() }, //nolint:gosec // ChaCha8 do runtime; ver o aviso acima e NewCryptoGenerator
 	}
 }
 
@@ -133,22 +115,6 @@ func NewGeneratorWith(source func() uint64) *Generator {
 		oneWord:  source,
 		twoWords: func() (uint64, uint64) { return source(), source() },
 	}
-}
-
-// strongSeed lê 8 bytes de crypto/rand e os converte em uint64.
-//
-// Entra em pânico se a leitura falhar: uma fonte de entropia quebrada não
-// pode degradar em silêncio para sementes derivadas do relógio, que
-// tornariam todos os PRNGs do pool correlacionados e previsíveis. A partir
-// do Go 1.24 crypto/rand.Read nunca devolve erro (o próprio runtime
-// encerra o processo), então este ramo só é alcançável em toolchains
-// anteriores.
-func strongSeed() uint64 {
-	var b [8]byte
-	if _, err := crand.Read(b[:]); err != nil {
-		panic("loghubuuid: falha ao ler crypto/rand para semear o gerador padrão: " + err.Error())
-	}
-	return binary.LittleEndian.Uint64(b[:])
 }
 
 // Generate produz um UUID binário (128 bits) do nível informado, usando

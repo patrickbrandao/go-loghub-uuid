@@ -258,9 +258,10 @@ func SetNodeID(id []byte) bool {
 }
 
 // fillRandom preenche b com bytes de crypto/rand. Entra em pânico se a
-// fonte criptográfica falhar: a sequência de relógio e o nó precisam ser
-// imprevisíveis, e o gerador padrão (PCG) não serve de substituto. A
-// partir do Go 1.24 a leitura nunca falha.
+// fonte criptográfica falhar: a sequência de relógio e o nó são sorteados
+// uma única vez e precisam ser imprevisíveis, então não podem degradar em
+// silêncio para o gerador padrão. A partir do Go 1.24 a leitura nunca
+// falha.
 func fillRandom(b []byte) {
 	if _, err := crand.Read(b); err != nil {
 		panic("loghubuuid: falha ao ler crypto/rand para a sequência de relógio ou o nó: " + err.Error())

@@ -7,7 +7,7 @@ package loghubuuid
 //
 // Os apelidos que produzem bits aleatórios (New, NewString, NewRandom e
 // NewV7) leem de crypto/rand, como faz o pacote de origem, e por isso são
-// mais lentos que Generate e GenerateV4 do gerador padrão (PCG). Os erros
+// mais lentos que Generate e GenerateV4 do gerador padrão. Os erros
 // devolvidos são nulos sempre que a fonte criptográfica responde; uma
 // falha de leitura, impossível a partir do Go 1.24, vira ErrEntropySource
 // em NewRandom e NewV7 e pânico em New e NewString, espelhando o pacote
@@ -19,8 +19,9 @@ package loghubuuid
 //	                       de execução, exigindo uma leitura atômica no
 //	                       caminho quente de Generate. Use
 //	                       NewGeneratorWithReader ou NewCryptoGenerator.
-//	EnableRandPool       — o gerador padrão já mantém um pool por thread,
-//	DisableRandPool        sem lock global; não há o que ligar ou desligar.
+//	EnableRandPool       — o gerador padrão já lê do gerador do runtime,
+//	DisableRandPool        que tem uma instância por thread e nenhuma trava
+//	                       global; não há o que ligar ou desligar.
 //	SetNodeInterface     — leria interfaces de rede, arrastando o pacote
 //	NodeInterface          net para dentro de quem só gera UUIDv7. Leia o
 //	                       endereço com net.Interfaces e passe a SetNodeID.

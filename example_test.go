@@ -147,7 +147,8 @@ func ExampleNullUUID() {
 
 // NewCryptoGenerator monta um gerador cuja entropia vem inteiramente de
 // crypto/rand, para identificadores que precisem ser inadivinháveis. O
-// gerador padrão (PCG) não serve para esse fim.
+// gerador padrão é mais rápido, mas a recomendação para segredos continua
+// sendo crypto/rand.
 func ExampleNewCryptoGenerator() {
 	gen := uuid.NewCryptoGenerator()
 

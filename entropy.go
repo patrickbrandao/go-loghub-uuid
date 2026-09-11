@@ -40,8 +40,8 @@ func NewGeneratorWithReader(reader io.Reader) *Generator {
 // NewCryptoGenerator cria um Generator cuja entropia vem inteiramente de
 // crypto/rand, tornando os bits aleatórios imprevisíveis.
 //
-// É mais lento que NewGenerator, que usa PCG semeado uma única vez. Use
-// este quando o identificador precisar resistir a quem tenta adivinhar o
+// É mais lento que NewGenerator, que lê do gerador do runtime. Use este
+// quando o identificador precisar resistir a quem tenta adivinhar o
 // próximo valor. Lembre-se de que, mesmo assim, todo UUIDv7 revela o
 // instante de criação por construção.
 func NewCryptoGenerator() *Generator {

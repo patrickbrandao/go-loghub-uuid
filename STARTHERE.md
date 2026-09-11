@@ -112,7 +112,7 @@ próprias.
 - `Time` — `Seconds`, `Milliseconds`, `Microseconds`, `Nanoseconds`.
 
 **Construtores**
-- `NewGenerator() *Generator` — padrão rápido (pool de PCG, sem lock).
+- `NewGenerator() *Generator` — padrão rápido (ChaCha8 do runtime, sem lock).
 - `NewGeneratorWith(source func() uint64) *Generator` — entropia
   personalizada; `source` precisa ser segura para concorrência e entra em
   pânico se for `nil`.
@@ -120,9 +120,10 @@ próprias.
   um `io.Reader` seguro para concorrência.
 - `NewCryptoGenerator() *Generator` — entropia de `crypto/rand`.
 
-> O gerador padrão usa PCG, um PRNG **estatístico**, não criptográfico:
-> não use estes UUIDs como segredo. Ver a seção "Aviso de segurança" do
-> [README.md](README.md).
+> O gerador padrão usa o ChaCha8 do runtime do Go, que resiste a
+> predição, mas a recomendação para segredos continua sendo
+> `crypto/rand`, e o UUIDv7 expõe o instante de criação de qualquer
+> forma. Ver a seção "Aviso de segurança" do [README.md](README.md).
 
 **Geração**
 - `(*Generator) Generate(Level) UUID`

@@ -23,12 +23,41 @@ Passagem de auditoria estática de 2026-09-10 sobre a `v0.3.0`: seis
 problemas encontrados e corrigidos, todos verificados com `gofmt`,
 `go vet` e a suíte sob detector de corrida no Go 1.22 (mínimo declarado)
 e no Go 1.27. Em 2026-09-11, a integração contínua foi ampliada (linter,
-outros sistemas, cobertura, corpus de fuzzing) e a documentação ganhou
+outros sistemas, cobertura, corpus de fuzzing), a documentação ganhou
 exemplos executáveis, guia de release, política de segurança e guia de
-contribuição. Nenhuma mudança de comportamento na biblioteca.
+contribuição, e as propostas em aberto das revisões de 2026-08-27 foram
+decididas — entre elas a troca da fonte de entropia do gerador padrão.
 
 ### Alterado
 
+- **O gerador padrão passou a ler do gerador do runtime do Go.**
+  `NewGenerator` tirava entropia de um `sync.Pool` de PRNGs PCG, cada um
+  semeado de `crypto/rand`; agora usa as funções de pacote de
+  `math/rand/v2`, que desde o Go 1.22 leem uma instância de ChaCha8 por
+  thread, semeada pelo sistema operacional. O ChaCha8 é uma cifra de
+  fluxo e resiste a predição, enquanto o PCG podia ter o estado
+  reconstruído a partir de poucas amostras — era o único ponto fraco de
+  segurança que a biblioteca documentava. A recomendação para segredos
+  continua sendo `NewCryptoGenerator`, e o UUIDv7 continua expondo o
+  instante de criação. Medido neste repositório (Apple M2, Go 1.27,
+  `GOGC=off GOMAXPROCS=4`, seis execuções): `GenerateLevel3Parallel` caiu
+  de 16,93 ns para 11,06 ns (-34,7%), `GenerateV4` de 12,36 ns para
+  11,65 ns (-5,7%) e a geração em série de 2% a 6%; as versões 1, 2, 5 e
+  6, que não usam essa fonte, não mudaram. A tabela completa está em
+  `docs/TEST-AND-BENCHMARK.md` seção 4. `NewGeneratorWith`,
+  `NewGeneratorWithReader` e `NewCryptoGenerator` não mudaram, e o número
+  de palavras sorteadas por nível continua o mesmo (uma nos níveis 2 e 3,
+  duas no nível 1). Sem o pool, `strongSeed` e o import de `crypto/rand`
+  saíram de `uuid.go`. (`uuid.go`)
+- **As travas de alocação voltaram a rodar sob `-race`.** As três que
+  dependem do gerador padrão eram puladas com o detector ativo, porque o
+  `sync.Pool` descarta itens de propósito nesse modo e as realocações
+  entravam na conta de `AllocsPerRun`. Sem pool não há estado a recriar:
+  `skipIfRaceDetector` e o par de arquivos com marcação de compilação
+  `tests/race_enabled_test.go` e `tests/race_disabled_test.go` foram
+  removidos. A integração contínua mantém o passo dedicado sem detector,
+  que continua sendo a medição de referência.
+  (`tests/alloc_test.go`, `.github/workflows/ci.yml`)
 - **`Scan` trata texto vazio como ausência de valor.** `UUID.Scan`
   passou a gravar o UUID nulo, sem erro, para `""` e para `[]byte{}`,
   como já fazia para `NULL` e como faz o pacote `github.com/google/uuid`.

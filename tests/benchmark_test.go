@@ -97,8 +97,8 @@ func TestMassOneMillion(t *testing.T) {
 	gen := uuid.NewGenerator()
 
 	// Passagem de aquecimento: sem ela o primeiro cenário medido paga
-	// sozinho o custo de aquecer cache de instruções, frequência de CPU e
-	// o sync.Pool, e aparece artificialmente mais lento que os demais.
+	// sozinho o custo de aquecer cache de instruções e frequência de CPU,
+	// e aparece artificialmente mais lento que os demais.
 	for i := 0; i < 100_000; i++ {
 		sinkU = gen.Generate(uuid.Level1)
 		sinkU = gen.Generate(uuid.Level3)

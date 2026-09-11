@@ -6,9 +6,10 @@ import "encoding/binary"
 // informação de tempo, com versão e variante fixas.
 //
 // A entropia vem da fonte deste Generator. No gerador padrão isso
-// significa PCG, um gerador pseudoaleatório estatístico e previsível: não
-// use estes identificadores como segredo. Para imprevisibilidade real,
-// monte o gerador com NewCryptoGenerator ou NewGeneratorWithReader.
+// significa o ChaCha8 do runtime do Go, que resiste a predição mas cuja
+// documentação recomenda crypto/rand para uso sensível a segurança: para
+// identificadores que precisem ser segredo, monte o gerador com
+// NewCryptoGenerator ou NewGeneratorWithReader.
 //
 // O caminho é livre de alocações, como o dos demais geradores binários.
 func (g *Generator) GenerateV4() UUID {

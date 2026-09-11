@@ -278,11 +278,14 @@ A geração de UUIDs baseados em tempo requer sincronização segura:
 
 - Para geração rápida (milhões de UUIDs/s), não utilize um lock global em
   torno de uma fonte compartilhada.
-- Mantenha um **pool de geradores pseudoaleatórios locais por thread /
-  goroutine** (ex.: PCG de 128 bits de estado, `math/rand/v2`).
-- Cada gerador local do pool é instanciado sob demanda e semeado **uma
-  única vez** com 128 bits (duas palavras de 64 bits) obtidos da fonte
-  criptográfica forte do sistema operacional (`crypto/rand`).
+- Use uma fonte **local por thread**. Se a linguagem já oferecer uma no
+  runtime, prefira-a: em Go, as funções de pacote de `math/rand/v2` leem
+  de uma instância de ChaCha8 por thread, semeada pelo sistema
+  operacional, sem trava e sem estado a manter pela biblioteca.
+- Se a plataforma não oferecer uma fonte por thread, mantenha um **pool
+  de geradores locais**, cada um instanciado sob demanda e semeado **uma
+  única vez** com 128 bits obtidos da fonte criptográfica forte do
+  sistema operacional.
 
 ### 5.2 Política Anti-Degradação Silenciosa (Evitando Falha Grave de Segurança)
 
@@ -297,8 +300,8 @@ A geração de UUIDs baseados em tempo requer sincronização segura:
 
 ### 5.3 Fontes Criptográficas Dedicadas
 
-- O gerador padrão com PCG é estatístico e previsível após algumas
-  amostras.
+- O gerador padrão não promete força criptográfica, mesmo quando a fonte
+  do runtime é resistente a predição.
 - Para casos que exigem imprevisibilidade (tokens de sessão, links
   secretos), a biblioteca deve fornecer um gerador explícito que utiliza
   exclusivamente entropia criptográfica (`NewCryptoGenerator`).
