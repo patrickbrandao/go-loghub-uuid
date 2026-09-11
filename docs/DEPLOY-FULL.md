@@ -231,6 +231,106 @@ instant := time.Unix(
 
 ---
 
+## Consultar por intervalo de tempo
+
+Este é o motivo prático de adotar UUIDv7 como chave primária: o próprio
+índice da chave já está em ordem cronológica, então uma janela de tempo
+vira uma varredura de faixa, **sem coluna nem índice de carimbo
+temporal**.
+
+O que falta para montar a consulta são os dois identificadores que
+delimitam a janela. `MinAt` e `MaxAt` devolvem, respectivamente, o menor
+e o maior UUIDv7 que a biblioteca poderia gerar em um instante, e
+`RangeAt` devolve o par de um intervalo semiaberto `[from, to)`.
+
+```go
+import "time"
+
+fim := time.Now()
+inicio := fim.Add(-24 * time.Hour)
+
+lo, hi := uuid.RangeAt(uuid.Level2, inicio, fim)
+
+rows, err := db.Query(
+	`SELECT id, mensagem FROM eventos
+	  WHERE id >= $1 AND id < $2
+	  ORDER BY id`,
+	lo.String(), hi.String(),
+)
+```
+
+O plano dessa consulta é uma varredura de faixa no índice primário. Não
+há `WHERE criado_em BETWEEN ...`, não há índice secundário para manter e
+a ordenação por `id` já sai cronológica.
+
+Para um intervalo **fechado** nas duas pontas, use as fronteiras
+diretamente:
+
+```go
+lo := uuid.MinAt(uuid.Level2, inicio)
+hi := uuid.MaxAt(uuid.Level2, fim)
+
+rows, err := db.Query(
+	"SELECT id, mensagem FROM eventos WHERE id BETWEEN $1 AND $2 ORDER BY id",
+	lo.String(), hi.String(),
+)
+```
+
+### Nunca misture níveis na mesma coluna
+
+**Este é o erro mais provável, e ele não dá mensagem nenhuma: devolve
+linhas a menos.**
+
+Os bits abaixo do milissegundo significam coisas diferentes em cada
+nível. No Nível 1 os 74 bits abaixo do carimbo são livres; no Nível 2 os
+12 bits de `rand_a` carregam os microssegundos exatos; no Nível 3
+`rand_a` carrega os microssegundos e os 10 bits altos de `rand_b`
+carregam os nanossegundos.
+
+Uma fronteira calculada para um nível só delimita identificadores
+gravados **naquele mesmo nível**. Uma fronteira superior de Nível 3, por
+exemplo, fica abaixo de boa parte dos identificadores de Nível 1 do
+mesmo instante, porque nela `rand_a` vale os microssegundos reais
+(0 a 999) enquanto no Nível 1 ele é aleatório (0 a 4095).
+
+Escolha o nível quando criar a tabela e não o mude. Se já houver dados
+misturados, a consulta por faixa precisa usar a fronteira do nível mais
+permissivo — Nível 1 — nas duas pontas, o que devolve linhas a mais e
+exige filtro adicional.
+
+### Precisão da fronteira
+
+A fronteira é tão precisa quanto o nível:
+
+| Nível    | A faixa delimita |
+|----------|------------------|
+| `Level1` | o milissegundo inteiro |
+| `Level2` | o microssegundo |
+| `Level3` | o nanossegundo |
+
+No Nível 1, `RangeAt(Level1, inicio, fim)` exclui o milissegundo inteiro
+de `fim`. Se a janela precisar terminar dentro daquele milissegundo, o
+nível não tem resolução para isso.
+
+### Bordas da faixa representável
+
+O campo de milissegundos tem 48 bits, e as fronteiras saturam nas duas
+pontas em vez de dar a volta:
+
+- Instante anterior a `1970-01-01T00:00:00Z`: devolve a fronteira da
+  própria época, como faz `Generate`.
+- Instante posterior a `10889-08-02T05:31:50.655999999Z`: devolve a
+  fronteira do último instante representável.
+
+Saturar mantém as fronteiras monotônicas para qualquer entrada. Em
+compensação, dois instantes distintos fora da faixa devolvem o mesmo
+valor, então um intervalo inteiramente fora dela é vazio.
+
+`RangeAt` não reordena os argumentos: passar `to` anterior a `from`
+devolve um intervalo vazio, e é isso que a comparação vai refletir.
+
+---
+
 ## Inspecionar
 
 ```go

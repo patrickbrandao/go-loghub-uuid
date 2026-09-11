@@ -2,6 +2,7 @@ package tests
 
 import (
 	"testing"
+	"time"
 
 	uuid "github.com/patrickbrandao/go-loghub-uuid"
 )
@@ -121,6 +122,27 @@ func TestParseZeroAllocations(t *testing.T) {
 	for name, call := range cases {
 		if allocs := testing.AllocsPerRun(1_000, call); allocs != 0 {
 			t.Errorf("%s: %.0f alocações por chamada, esperado 0", name, allocs)
+		}
+	}
+}
+
+// TestBoundsZeroAllocations trava a ausência de alocações nas fronteiras
+// de tempo. Elas montam um UUID por valor, devolvido na pilha, e são
+// chamadas uma vez por consulta — mas uma alocação aqui denunciaria que
+// o instante ou o nível passaram a escapar para o heap.
+func TestBoundsZeroAllocations(t *testing.T) {
+	instante := time.Now()
+	fim := instante.Add(time.Second)
+	for _, level := range []uuid.Level{uuid.Level1, uuid.Level2, uuid.Level3} {
+		cases := map[string]func(){
+			"MinAt":   func() { sinkU = uuid.MinAt(level, instante) },
+			"MaxAt":   func() { sinkU = uuid.MaxAt(level, instante) },
+			"RangeAt": func() { sinkU, sinkU = uuid.RangeAt(level, instante, fim) },
+		}
+		for name, call := range cases {
+			if allocs := testing.AllocsPerRun(1_000, call); allocs != 0 {
+				t.Errorf("%s(nível %d): %.0f alocações por chamada, esperado 0", name, level, allocs)
+			}
 		}
 	}
 }

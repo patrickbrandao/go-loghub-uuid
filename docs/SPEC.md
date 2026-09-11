@@ -48,7 +48,15 @@ quente) e segura para concorrência pesada, cobrindo todo o padrão
 4. **Inspeção e Extração**:
    - Extração de versão, variante, instante temporal (Unix/Gregorian),
      sequência de relógio, nó de rede, domínio e ID local.
-5. **Serialização e Integração**:
+5. **Fronteiras de Tempo (Consulta por Intervalo)**:
+   - Derivação, a partir de um instante e de um nível, do menor e do
+     maior UUIDv7 que a biblioteca poderia gerar naquele instante, para
+     que uma janela de tempo seja respondida pelo índice da própria chave
+     primária, sem coluna nem índice de carimbo temporal.
+   - É a operação **inversa** da extração do item 4: ali se lê o tempo de
+     um identificador, aqui se derivam os identificadores que delimitam
+     um tempo.
+6. **Serialização e Integração**:
    - Serialização de texto e JSON como string canônica entre aspas.
    - Suporte a identificadores nulos em banco de dados (`NullUUID`).
    - Operações de ordenação lexicográfica e constantes `Nil` e `Max`.
@@ -122,7 +130,20 @@ nanossegundos deve obedecer a regras estritas de robustez:
    - **Regra**: se `sec < 0`, fixe `unix_ts_ms = 0`, `micro = 0` e
      `nano = 0`. Um relógio quebrado ou pré-época não pode gerar campos
      fora da faixa `0..999`.
-3. **Decomposição pura**:
+3. **Proteção contra instantes muito além da faixa do UUIDv7**:
+   - A decomposição multiplica os segundos por mil. Quando o instante vem
+     do relógio do sistema isso é inofensivo, mas quando vem **por
+     parâmetro** (seção 3.5) o tipo de data da linguagem costuma comportar
+     anos muito além dos 48 bits de milissegundos do UUIDv7, e o produto
+     **estoura o inteiro com sinal de 64 bits**.
+   - O estouro dá a volta trocando o sinal, e o resultado é pior que um
+     valor grande errado: um instante remoto no **futuro** vira negativo e
+     cai no piso da época, e um remoto no **passado** vira positivo e
+     produz um carimbo enorme. Nos dois casos a regra do item 2 deixa de
+     disparar, porque o sinal já foi invertido.
+   - **Regra**: decida a saturação sobre os **segundos**, antes da
+     multiplicação. Ver a seção 3.5, onde essa saturação é obrigatória.
+4. **Decomposição pura**:
    - `unix_ts_ms = (uint64(sec) * 1000) + (uint64(nsec) / 1_000_000)`
    - `sub_ms = uint64(nsec) % 1_000_000`
    - `micro = sub_ms / 1000` (faixa 0..999, cabe em 10 bits; campo tem 12 bits)
@@ -169,6 +190,85 @@ tolerado. Esse teste mede a resolução do relógio do host, não a
 biblioteca, e falha de forma permanente em hosts com relógio de
 microssegundo. Teste a invariante acima fazendo o instante avançar de
 verdade entre as gerações.
+
+---
+
+### 3.5 Fronteiras de Tempo para Consulta por Intervalo
+
+O motivo prático de adotar UUIDv7 como chave primária é responder a uma
+janela de tempo com o índice da própria chave, sem coluna nem índice de
+carimbo temporal. Para isso a implementação **DEVE** oferecer as duas
+fronteiras de um instante, e elas dependem do nível.
+
+Sejam `ms`, `micro` e `nano` os campos produzidos pela decomposição da
+seção 3.2 aplicada ao instante `t`. Define-se um valor de preenchimento
+`fill`: **todos os bits em zero** para a fronteira inferior e **todos os
+bits em um** para a superior. A fronteira é então montada exatamente
+como a geração da seção 3.1, trocando a entropia por `fill`:
+
+| Nível    | `rand_a` (12 bits) | `rand_b[61:52]` | `rand_b[51:0]` |
+|----------|--------------------|-----------------|----------------|
+| `Level1` | `fill`             | `fill`          | `fill`         |
+| `Level2` | `micro`            | `fill`          | `fill`         |
+| `Level3` | `micro`            | `nano`          | `fill`         |
+
+Níveis desconhecidos são tratados como `Level1`, como na geração.
+
+**Versão e variante são preservadas nas duas fronteiras**, e é isso que
+as torna limites corretos. O byte 6 recebe `0x70 | (rand_a >> 8)` e o
+byte 8 recebe `0x80 | (rand_b >> 56)`, de modo que a fronteira superior
+do Nível 1 termina em `0x7F` no byte 6 e `0xBF` no byte 8, não em `0xFF`.
+Como **todo** UUIDv7 válido tem o nibble de versão em `7` e o byte 8 na
+faixa `0x80..0xBF`, e como a comparação é byte a byte a partir do mais
+significativo, as duas fronteiras de fato contêm todos os valores
+geráveis naquele instante e naquele nível.
+
+**Regra normativa — a precisão da fronteira é a do nível.** No Nível 1 a
+faixa delimita o milissegundo inteiro; no Nível 2, o microssegundo; no
+Nível 3, o nanossegundo.
+
+**Regra normativa — fronteiras de níveis distintos não compõem.** Os
+bits abaixo do milissegundo significam coisas diferentes em cada nível,
+então uma fronteira calculada para um nível só delimita identificadores
+gravados naquele mesmo nível. Uma fronteira superior de Nível 3 fica
+abaixo de parte dos identificadores de Nível 1 do mesmo instante, porque
+nela `rand_a` vale os microssegundos reais (0 a 999) enquanto no Nível 1
+é aleatório (0 a 4095). A implementação **DEVE** documentar isso de
+forma destacada: é o erro mais provável do chamador, e ele se manifesta
+como linhas faltando, sem erro nenhum.
+
+**Regra normativa — saturação nas duas pontas.** Diferentemente da
+geração, que só tem piso na época, as fronteiras **DEVEM** saturar
+também no teto:
+
+- Instante anterior a `1970-01-01T00:00:00Z`: resultado igual ao da
+  própria época, com os campos abaixo do milissegundo zerados. É o mesmo
+  comportamento da seção 3.2, e a coerência com a geração é obrigatória.
+- Instante posterior a `10889-08-02T05:31:50.655999999Z`, o último que
+  cabe em 48 bits de milissegundos: resultado igual ao desse instante,
+  **com `micro` e `nano` em 999**. Zerá-los faria a fronteira regredir ao
+  cruzar a borda, quebrando a monotonicidade.
+
+Truncar os bits excedentes, como o empacotamento por deslocamento faria
+naturalmente, é **proibido**: a fronteira daria a volta e a consulta
+passaria a devolver as linhas erradas em silêncio. A propriedade a
+preservar é que a fronteira nunca regride quando o instante avança.
+
+**Cuidado de implementação.** É aqui que a regra 3 da seção 3.2 passa a
+valer: como o instante vem por parâmetro e não do relógio do sistema, ele
+pode estar longe o bastante para estourar a multiplicação por mil. A
+saturação **DEVE** ser decidida sobre os segundos, antes dela, nas duas
+direções.
+
+**Intervalo semiaberto.** A conveniência que devolve o par de um
+intervalo `[from, to)` usa a fronteira **inferior** nas duas pontas:
+`lo = MinAt(nível, from)` e `hi = MinAt(nível, to)`. Isso corresponde
+diretamente a `WHERE id >= lo AND id < hi`. Ela não reordena os
+argumentos: `to` anterior a `from` produz um intervalo vazio.
+
+**Esta funcionalidade não toca o caminho quente.** As fronteiras recebem
+o instante por parâmetro, são funções de pacote separadas e a geração
+nunca as chama. Ver a seção 11.3.
 
 ---
 
@@ -431,6 +531,24 @@ A biblioteca deve disponibilizar operações de consulta:
   quando houver capacidade. É o caminho previsto para serializar grandes
   volumes; a conversão que devolve string aloca a cada chamada.
 
+A biblioteca deve disponibilizar também as operações de **derivação**
+da seção 3.5, que são o sentido inverso das acima: recebem um instante
+e um nível e devolvem o identificador que os delimita. Diferentemente
+de todas as operações desta seção, elas não são métodos de um UUID.
+
+- **`MinAt(Level, instante) UUID`**: o menor UUIDv7 que a biblioteca
+  poderia gerar naquele instante e naquele nível, com os bits livres de
+  entropia em zero.
+- **`MaxAt(Level, instante) UUID`**: o maior, com os bits livres em um.
+  É o limite superior **fechado** do instante.
+- **`RangeAt(Level, from, to) (lo, hi)`**: o par de um intervalo
+  **semiaberto** `[from, to)`, com `lo = MinAt(nível, from)` e
+  `hi = MinAt(nível, to)`, para `id >= lo AND id < hi`.
+
+As três preservam versão e variante, saturam nas duas pontas da faixa
+representável e valem apenas para identificadores gravados no **mesmo
+nível**. As regras normativas estão na seção 3.5.
+
 ---
 
 ## 8. Serialização, Banco de Dados e Valores Especiais
@@ -454,7 +572,7 @@ A biblioteca deve disponibilizar operações de consulta:
 
 ## 9. Catálogo de Armadilhas Evitadas (Guia Anti-Regressão)
 
-Toda reimplementação deve garantir proteção contra estes 10 defeitos
+Toda reimplementação deve garantir proteção contra estes 12 defeitos
 reais:
 
 | # | Armadilha Histórica | Consequência | Solução Obrigatória |
@@ -469,6 +587,8 @@ reais:
 | 8 | **Desperdício de entropia no v7** | Sortear duas palavras de 64 bits nos Níveis 2 e 3 | Sortear apenas 1 palavra nos Níveis 2 e 3 (economia de 17% em concorrência) |
 | 9 | **Serialização JSON como array** | `[1, 146, 247, ...]` em vez de `"0192f7c5-..."` quebrava interoperabilidade | Implementar `MarshalText`/`MarshalBinary` canônicos |
 | 10 | **Tags sobrescritas com `-f`** | Quebrava a verificação de integridade no registro público (`sum.golang.org`) | Tags publicadas são estritamente imutáveis; nunca mover com `-f` |
+| 11 | **Estouro de `sec * 1000` com instante fora da faixa** | Com o instante vindo por parâmetro, o produto estoura o inteiro com sinal e troca de sinal: data remota no futuro cai no piso da época, data remota no passado vira carimbo enorme. A guarda de `sec < 0` não dispara, porque o sinal já foi invertido | Decidir a saturação sobre os **segundos**, antes da multiplicação (seções 3.2 e 3.5) |
+| 12 | **Fronteira de intervalo truncando em vez de saturar** | O empacotamento por deslocamento descarta os bits acima de 48 de graça: a fronteira dá a volta e a consulta por faixa devolve as linhas erradas **em silêncio**, sem erro nenhum. Zerar `micro` e `nano` na saturação tem o mesmo efeito na travessia da borda | Saturar nas duas pontas, levando `micro` e `nano` a 999 no teto; a fronteira nunca pode regredir quando o instante avança (seção 3.5) |
 
 ---
 
@@ -519,6 +639,25 @@ reais:
      embaralhada (`-shuffle on`). Sem isso, um teste que fixa o nó faz os
      seguintes rodarem com um nó que não é o padrão, e a falha aparece
      longe da causa.
+10. **Fronteiras de Tempo (seção 3.5)**:
+    - Gerar uma rajada entre dois instantes lidos do relógio e conferir
+      que **toda** ela cai dentro das fronteiras desses instantes, nos
+      três níveis. É o teste que prova a fronteira, e não a inspeção do
+      layout de bits.
+    - Conferir versão 7 e variante `0b10` nas duas fronteiras, nos três
+      níveis, inclusive nos instantes saturados.
+    - Conferir a ordem: a fronteira inferior nunca passa da superior no
+      mesmo instante, e instantes separados pela resolução do nível
+      produzem faixas disjuntas e em ordem.
+    - Conferir a monotonicidade sobre uma lista de instantes que inclua
+      as duas pontas saturadas e a travessia da borda superior. Zerar
+      `micro` e `nano` na saturação **deve** fazer este teste falhar.
+    - Conferir o estouro da multiplicação por mil descrito na seção 3.5,
+      com instantes grandes o bastante para provocá-lo nas duas direções.
+    - Conferir a ida e volta: ler a fronteira com a leitura por nível
+      devolve o instante de origem, truncado à resolução do nível.
+    - Travar o layout com vetores fixos, calculados fora da
+      implementação.
 
 ---
 
@@ -547,6 +686,7 @@ pacote faz diferente" não são argumento novo.
 |:---|:---|:---|:---|
 | **O relógio não é injetável.** A geração lê o relógio do sistema diretamente. | 2026-09-11 | A motivação original era testar bordas de relógio; isso foi resolvido isolando a decomposição do instante (3.2) em função pura, testada de dentro do pacote. O layout de bits está travado por testes de entropia fixa. Sobrava apenas o vetor dourado de ponta a ponta, que não paga um campo de função no caminho quente. | Necessidade de teste que a função pura de decomposição comprovadamente não cobre. |
 | **A duplicação entre a formatação canônica do caminho quente e a dos serializadores é deliberada.** | permanente | A conversão para texto é caminho quente e não deve pagar uma chamada de função por causa dos serializadores. As duas cópias são pequenas e travadas pelos mesmos testes. | Compilador que comprovadamente embuta a chamada sem custo. |
+| **A duplicação do layout de bytes entre a geração e a montagem da fronteira (seção 3.5) é deliberada.** | 2026-09-11 | A fronteira repete campo a campo o empacotamento da geração, trocando a entropia por um valor de preenchimento. Fatorar as duas em uma função só poria uma chamada ou um desvio no caminho quente, que a decisão 11.1 proíbe. As duas cópias ficam travadas pelos mesmos vetores fixos, e o comentário da fronteira aponta para a geração como origem do layout, porque é ela que precisa acompanhar. | Compilador que comprovadamente embuta a chamada sem custo, medido antes e depois. |
 
 ### 11.3 Contrato público
 
@@ -556,6 +696,8 @@ pacote faz diferente" não são argumento novo.
 | **A validação de forma aceita os valores especiais** nulo e máximo, além de variante RFC com versão de 1 a 8. | 2026-09-11 | A RFC 9562 seções 5.9 e 5.10 define os dois como válidos apesar de não carregarem versão nem variante. Predicados separados distinguem os casos. | Mudança na própria RFC. |
 | **A biblioteca não lê interfaces de rede** para obter o nó. | v0.2.0 | Arrastaria a biblioteca de rede para dentro de quem só gera UUIDv7, e expõe a identidade da máquina. O nó sorteado com bit multicast é o caminho recomendado pela RFC 9562 §6.10. Quem quiser um endereço real o lê fora e o entrega. | Nada previsto. |
 | **O versionamento permanece em `v0.x`** até a superfície pública assentar. | 2026-09-11 | A `v0.4.0` mudou o gerador padrão e ampliou a API no mesmo ciclo. Um compromisso de estabilidade só faz sentido depois de uso real. | Uso em produção estabilizado, mais revisão da superfície pública inteira e política de compatibilidade publicada. |
+| **As fronteiras de tempo são funções de pacote que recebem o instante — `MinAt`, `MaxAt` e `RangeAt` — e isso não reabre a decisão 11.2.** | 2026-09-11 | O que a 11.2 recusou foi um campo de função de relógio dentro do `Generator`, no caminho quente, como costura de teste. Aqui o instante é parâmetro de funções separadas, a geração nunca as chama e o caminho quente não ganha desvio nem indireção, então a regra da 11.1 continua satisfeita. Sem elas, a consulta por intervalo — o argumento central para adotar UUIDv7 como chave primária — exige que o chamador monte os 16 bytes à mão, e é justamente o cálculo por nível que ele erra. Os nomes `MinAt`/`MaxAt` foram escolhidos sobre `FloorAt`/`CeilAt` e `LowerBound`/`UpperBound`: conversam com o `Max` que já existe em `values.go`, onde `Max` é o maior UUID absoluto e `MaxAt` o maior de um instante. `RangeAt` devolve intervalo **semiaberto**, que é a forma do SQL que motiva a função. | Uma proposta de fazer a geração chamar estas funções, ou de mover o instante para dentro do `Generator`, que aí sim seria a 11.2. |
+| **As fronteiras saturam nas duas pontas da faixa representável**, inclusive levando `micro` e `nano` a 999 no teto. | 2026-09-11 | Uma fronteira é predicado de consulta: o que a torna correta é nunca regredir quando o instante avança. Truncar os bits excedentes, como o empacotamento por deslocamento faria de graça, deixaria a fronteira dar a volta e a consulta devolveria as linhas erradas em silêncio. Saturar no teto é a escolha simétrica ao piso na época que a seção 3.2 já faz embaixo. Zerar `micro` e `nano` na saturação quebraria a monotonicidade na travessia da borda, e há teste para isso. | Nada previsto: a alternativa é aceitar resposta errada em silêncio. |
 
 ### 11.4 Como registrar uma decisão nova
 

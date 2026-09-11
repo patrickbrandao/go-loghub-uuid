@@ -203,5 +203,10 @@ dado precisa ser convertido na migração.
 - **`IsValid()`**: confere variante e versão em uma chamada. Não existe
   no pacote do Google, onde a verificação equivalente é comparar
   `Version()` e `Variant()` à mão.
+- **`MinAt`, `MaxAt` e `RangeAt`**: as fronteiras de um instante, para
+  consulta por intervalo usando o índice da própria chave primária. Não
+  existem no pacote do Google, onde não há caminho nenhum para obter o
+  UUID que delimita um instante: o chamador monta os 16 bytes à mão.
+  Aqui o cálculo ainda respeita o nível, que é a parte que mais se erra.
 - **`Compare`, `IsZero`, `IsMax`** e as descrições em texto
   `VersionString` e `VariantString`.

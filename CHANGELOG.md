@@ -19,6 +19,73 @@ Convenções de cada seção:
 
 ## [Não publicado]
 
+### Adicionado
+
+- **`MinAt`, `MaxAt` e `RangeAt` em `bounds.go`: as fronteiras de tempo
+  de um instante, para consulta por intervalo.** O argumento central
+  para adotar UUIDv7 como chave primária é responder a uma janela de
+  tempo com o índice da própria chave, sem coluna nem índice de carimbo
+  temporal — e a biblioteca não oferecia caminho nenhum para obter os
+  dois identificadores que delimitam a janela. `NewV7FromReader` recebe
+  entropia, não tempo; `GenerateV8` aceita 16 bytes mas produz outra
+  versão. O usuário montava os bytes à mão.
+
+  `MinAt(nível, t)` devolve o menor UUIDv7 que a biblioteca poderia
+  gerar em `t` naquele nível, com os bits livres de entropia em zero;
+  `MaxAt` devolve o maior, com esses bits em um. `RangeAt(nível, from,
+  to)` devolve o par de um intervalo **semiaberto** `[from, to)`, que é
+  a forma do SQL que motiva a função:
+
+  ```sql
+  SELECT * FROM eventos WHERE id >= ? AND id < ? ORDER BY id
+  ```
+
+  As três preservam a versão 7 e a variante RFC, e é isso que as torna
+  limites corretos: a fronteira superior do Nível 1 termina em
+  `7fff-bfff`, não em `ffff-ffff`. Como todo UUIDv7 válido tem o nibble
+  de versão em `7` e o byte 8 na faixa `0x80..0xbf`, as fronteiras de
+  fato contêm todos os valores geráveis naquele instante.
+
+  **O cálculo respeita o nível**, que é a parte que o usuário erra
+  sozinho: no Nível 2 o campo `rand_a` carrega os microssegundos exatos
+  do instante e zerá-lo produziria uma fronteira errada; no Nível 3 ele
+  carrega os microssegundos e os 10 bits altos de `rand_b` carregam os
+  nanossegundos, restando 52 bits livres. Níveis desconhecidos caem no
+  Nível 1, como em `Generate`.
+
+  **Fronteiras de níveis distintos não compõem**, e este é o erro mais
+  provável do chamador: uma fronteira de Nível 3 não delimita
+  identificadores gravados em Nível 1, porque os bits abaixo do
+  milissegundo significam coisas diferentes em cada nível. A falha se
+  manifesta como linhas faltando, sem erro nenhum. O aviso está em
+  destaque no comentário das três funções, em `docs/DEPLOY-FULL.md` e
+  como regra normativa em `docs/SPEC.md` seção 3.5.
+
+  O caminho quente não foi tocado: `uuid.go`, `conversion.go` e
+  `import.go` estão idênticos ao commit anterior. As fronteiras recebem
+  o instante por parâmetro, são funções de pacote separadas e `Generate`
+  nunca as chama. Medem cerca de 5 ns com zero alocações, travadas em
+  `tests/alloc_test.go`.
+
+  **As fronteiras saturam nas duas pontas da faixa representável**, ao
+  contrário da geração, que só tem piso na época. Abaixo de
+  `1970-01-01T00:00:00Z` o resultado é o da própria época, reaproveitando
+  `splitUnixInstant` para herdar exatamente o comportamento de
+  `Generate`. Acima de `10889-08-02T05:31:50.655999999Z`, o último
+  instante que cabe em 48 bits de milissegundos, o resultado é o desse
+  instante, **com os microssegundos e nanossegundos em 999**: zerá-los
+  faria a fronteira regredir ao cruzar a borda. A saturação é decidida
+  sobre os **segundos**, antes da multiplicação por mil, porque um
+  `time.Time` comporta anos muito além da faixa do UUIDv7 e o produto
+  estoura o inteiro com sinal nas duas direções. Sem essa guarda, um
+  instante remoto no futuro cairia no piso da época e um remoto no
+  passado produziria um carimbo enorme. Há teste para cada um dos dois
+  casos, e o motivo da escolha está em "Decisões".
+
+  **Nada de comportamento existente mudou.** A API é puramente aditiva e
+  nenhum caminho anterior foi tocado: quem atualiza da `v0.4.0` não
+  precisa mudar nada.
+
 ### Documentação
 
 - **Registro de decisões firmadas em `docs/SPEC.md` seção 11.** As
@@ -58,6 +125,75 @@ Convenções de cada seção:
   `strongSeed` em `CLAUDE.md` e `docs/TEST-AND-BENCHMARK.md`, e os
   arquivos `race_enabled_test.go` e `race_disabled_test.go` na árvore do
   `STARTHERE.md`, que agora lista `clockstate_test.go`.
+- **`docs/DEPLOY-FULL.md` ganhou a seção "Consultar por intervalo de
+  tempo"**, com a consulta SQL completa, a variante fechada com
+  `BETWEEN`, a tabela de precisão por nível e o aviso destacado sobre
+  misturar níveis. Nenhum documento do projeto mencionava consulta por
+  intervalo até aqui, que é o principal motivo de a biblioteca existir.
+  `docs/MIGRATION.md` seção 5 registra que o pacote do Google não tem
+  equivalente; `STARTHERE.md` lista as três funções e o arquivo novo;
+  `docs/TEST-AND-BENCHMARK.md` lista os quatro benchmarks novos.
+- **`docs/SPEC.md` atualizado em seis pontos**, para que a
+  especificação continue bastando por si só para reimplementar a
+  biblioteca do zero:
+  - **Seção 1** (escopo) ganhou o item 5, "Fronteiras de Tempo", que é a
+    operação inversa da extração do item 4: ali se lê o tempo de um
+    identificador, aqui se derivam os identificadores que delimitam um
+    tempo. "Serialização e Integração" passou de item 5 para 6.
+  - **Seção 3.5**, nova, com o cálculo normativo por nível, a tabela de
+    preenchimento dos bits livres, as regras de precisão, de níveis que
+    não compõem, de saturação nas duas pontas e do intervalo semiaberto.
+  - **Seção 3.2** (aritmética temporal) ganhou a regra 3, sobre o
+    estouro da multiplicação por mil quando o instante vem por
+    parâmetro. A regra antiga de decomposição pura virou item 4.
+  - **Seção 7** (contrato de API) passou a listar `MinAt`, `MaxAt` e
+    `RangeAt`, separadas das demais porque não são métodos de um UUID e
+    sim derivações a partir de um instante.
+  - **Seção 9** (catálogo de armadilhas) passou de 10 para 12 linhas,
+    com o estouro de `sec * 1000` e a fronteira que trunca em vez de
+    saturar. As duas devolvem resultado errado em silêncio, que é o
+    critério da tabela.
+  - **Seção 10** ganhou o caso de teste obrigatório 10, com as sete
+    verificações exigidas das fronteiras.
+- Dois exemplos executáveis novos em `example_test.go`, `ExampleMinAt` e
+  `ExampleRangeAt`. Como as fronteiras recebem o instante por parâmetro,
+  eles têm saída verificável sem depender do relógio.
+
+### Decisões
+
+- **As fronteiras de tempo não reabrem a decisão do relógio não
+  injetável** (`docs/SPEC.md` seção 11.2). O que aquela decisão recusou
+  foi um campo de função de relógio dentro do `Generator`, no caminho
+  quente, como costura de teste. Aqui o instante é parâmetro de funções
+  separadas, a geração nunca as chama e o caminho quente não ganha
+  desvio nem indireção. A adjacência entre os dois assuntos e a decisão
+  de implementar estão registradas na seção 11.3.
+- **Nomenclatura `MinAt`/`MaxAt`**, escolhida sobre `FloorAt`/`CeilAt` e
+  `LowerBound`/`UpperBound`. Ela conversa com o `Max` que já existe em
+  `values.go`: `Max` é o maior UUID absoluto, `MaxAt` o maior de um
+  instante. `FloorAt`/`CeilAt` é vocabulário de arredondamento e sugere
+  ajustar um valor existente, não derivar uma fronteira.
+- **`RangeAt` devolve intervalo semiaberto**, não fechado, porque
+  `id >= lo AND id < hi` é a forma da consulta que motiva a função. Para
+  o intervalo fechado, `MinAt` e `MaxAt` continuam disponíveis.
+- **A duplicação do layout de bytes entre `Generate` e `boundAt` é
+  deliberada**, e está registrada em `docs/SPEC.md` seção 11.2 ao lado da
+  duplicação já existente entre a formatação canônica do caminho quente e
+  a dos serializadores. A fronteira repete campo a campo o empacotamento
+  da geração, trocando a entropia por um valor de preenchimento. Fatorar
+  as duas em uma função só poria uma chamada ou um desvio no caminho
+  quente, que a decisão 11.1 proíbe. Sem esse registro, a próxima
+  auditoria abriria um achado de DRY contra `boundAt`. `CLAUDE.md` passou
+  a listar três invariantes de duplicação deliberada, não duas, e a
+  avisar que `Generate` não tem ponteiro de volta: quem mudar o layout lá
+  precisa seguir até `bounds.go` à mão, e são os vetores fixos de
+  `tests/bounds_test.go` que pegam o esquecimento.
+- **Saturar em vez de truncar** acima da faixa representável. Truncar os
+  bits excedentes sairia de graça do empacotamento por deslocamento e
+  concordaria com `Generate`, mas uma fronteira é predicado de consulta:
+  o que a torna correta é nunca regredir quando o instante avança. Uma
+  fronteira que dá a volta devolve as linhas erradas em silêncio.
+  Registrado na seção 11.3.
 
 ---
 

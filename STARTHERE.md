@@ -42,6 +42,7 @@ go-loghub-uuid/
 ├── version8.go             # GenerateV8
 │
 │   # PRODUÇÃO — API de apoio
+├── bounds.go               # MinAt, MaxAt e RangeAt: fronteiras para consulta por intervalo
 ├── parse.go                # Parse permissivo, Validate, FromBytes, MustParse
 ├── values.go               # Nil, Max, Compare, URN, Bytes, IsValid, UUIDs
 ├── encoding.go             # AppendTo, MarshalText/Binary e as leituras
@@ -141,6 +142,19 @@ próprias.
 **Importação**
 - `Import(string) (Time, error)`
 - `ImportBinary(UUID) Time`
+
+**Fronteiras de tempo (consulta por intervalo)**
+- `MinAt(Level, time.Time) UUID` — o menor UUIDv7 gerável naquele
+  instante e naquele nível; bits livres de entropia em zero.
+- `MaxAt(Level, time.Time) UUID` — o maior; bits livres em um.
+- `RangeAt(Level, from, to time.Time) (lo, hi UUID)` — o par de um
+  intervalo **semiaberto** `[from, to)`, pronto para
+  `WHERE id >= lo AND id < hi`.
+
+> As três preservam versão 7 e variante RFC, e por isso delimitam de
+> fato os identificadores gravados. A fronteira só vale para UUIDs do
+> **mesmo nível**: os bits abaixo do milissegundo significam coisas
+> diferentes em cada um. Ver [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md).
 
 ### 3.2 Demais versões de UUID
 

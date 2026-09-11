@@ -156,3 +156,43 @@ func ExampleNewCryptoGenerator() {
 	fmt.Println(u.Version(), u.Variant())
 	// Output: 7 2
 }
+
+// MinAt e MaxAt devolvem o menor e o maior UUIDv7 que a biblioteca
+// poderia gerar em um instante, no nível informado. As duas preservam a
+// versão 7 e a variante RFC, e é isso que as torna limites corretos: a
+// fronteira superior do Nível 1 termina em 7fff-bfff, não em ffff-ffff.
+//
+// No Nível 2 o campo rand_a carrega os microssegundos do instante (456,
+// ou 0x1c8), então ele é igual nas duas fronteiras e só rand_b varia.
+func ExampleMinAt() {
+	instante := time.Date(2026, 9, 11, 12, 34, 56, 123_456_789, time.UTC)
+
+	fmt.Println(uuid.MinAt(uuid.Level1, instante))
+	fmt.Println(uuid.MaxAt(uuid.Level1, instante))
+	fmt.Println(uuid.MinAt(uuid.Level2, instante))
+	fmt.Println(uuid.MaxAt(uuid.Level2, instante))
+	// Output:
+	// 01a09076-bdfb-7000-8000-000000000000
+	// 01a09076-bdfb-7fff-bfff-ffffffffffff
+	// 01a09076-bdfb-71c8-8000-000000000000
+	// 01a09076-bdfb-71c8-bfff-ffffffffffff
+}
+
+// RangeAt devolve as duas fronteiras de um intervalo semiaberto, prontas
+// para consultar por faixa usando o índice da própria chave primária:
+//
+//	SELECT * FROM eventos WHERE id >= $1 AND id < $2 ORDER BY id
+//
+// A fronteira só vale para identificadores gravados no mesmo nível: os
+// bits abaixo do milissegundo significam coisas diferentes em cada um.
+func ExampleRangeAt() {
+	inicio := time.Date(2026, 9, 11, 12, 34, 56, 123_456_789, time.UTC)
+	fim := inicio.Add(time.Millisecond)
+
+	lo, hi := uuid.RangeAt(uuid.Level2, inicio, fim)
+	fmt.Println(lo)
+	fmt.Println(hi)
+	// Output:
+	// 01a09076-bdfb-71c8-8000-000000000000
+	// 01a09076-bdfc-71c8-8000-000000000000
+}

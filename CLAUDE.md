@@ -68,6 +68,10 @@ Each source file is a distinct concern.
 - `version8.go` — `GenerateV8` and its random variant.
 
 **Support API.**
+- `bounds.go` — `MinAt`, `MaxAt`, `RangeAt`: the UUIDv7 that delimits an
+  instant, for range queries off the primary key index. Level-aware, and
+  deliberately **not** on the hot path: it takes the instant as a
+  parameter and `Generate` never calls it. See `docs/SPEC.md` §3.5.
 - `parse.go` — lenient `Parse`/`ParseBytes` (four formats, generic over `string`/`[]byte` to stay allocation-free), `Validate`, `FromBytes`, `MustParse`, `Must`, and the wrapped format errors.
 - `values.go` — `Nil`, `Max`, `Compare`, `URN`, `Bytes`, `IsValid`, `UUIDs`, `VersionString`, `VariantString`.
 - `encoding.go` — `encodeHex`, `AppendTo`/`AppendText`, plus the text and binary marshalers.
@@ -76,9 +80,9 @@ Each source file is a distinct concern.
 - `entropy.go` — `NewGeneratorWithReader`, `NewCryptoGenerator`, `ErrEntropySource`.
 - `compat.go` — aliases matching `github.com/google/uuid` names and signatures. See `docs/MIGRATION.md`.
 
-**Two invariants worth stating explicitly.** First, `String()` and `encodeHex` duplicate the same eight lines on purpose: `String()` is the hot path and must not pay a call. Second, `FromString` still returns the bare `ErrInvalidFormat` sentinel, so `err == ErrInvalidFormat` keeps working for existing callers; only `Parse` returns the wrapped, more specific errors. Both are recorded in `docs/SPEC.md` §11 — do not "fix" either as a DRY or consistency finding.
+**Three invariants worth stating explicitly.** First, `String()` and `encodeHex` duplicate the same eight lines on purpose: `String()` is the hot path and must not pay a call. Second, `boundAt` in `bounds.go` duplicates the byte layout of `Generate` for the same reason, with a fill value where the entropy goes; factoring the two into one function would put a call or a branch in the hot path. Third, `FromString` still returns the bare `ErrInvalidFormat` sentinel, so `err == ErrInvalidFormat` keeps working for existing callers; only `Parse` returns the wrapped, more specific errors. All three are recorded in `docs/SPEC.md` §11 — do not "fix" any of them as a DRY or consistency finding.
 
-**Settled decisions live in `docs/SPEC.md` §11.** Before proposing a change to the default entropy source, a monotonic counter, an injectable clock, the two invariants above, or a v1.0.0 tag, read that section: each was decided with a reason and a stated bar for reopening. Record every new design decision there — including refusals — plus a `CHANGELOG.md` entry. An unrecorded refusal comes back at the next audit.
+**Settled decisions live in `docs/SPEC.md` §11.** Before proposing a change to the default entropy source, a monotonic counter, an injectable clock, the three invariants above, or a v1.0.0 tag, read that section: each was decided with a reason and a stated bar for reopening. Record every new design decision there — including refusals — plus a `CHANGELOG.md` entry. An unrecorded refusal comes back at the next audit.
 
 ### The three levels (core concept)
 
@@ -90,7 +94,7 @@ A UUIDv7 carries a 48-bit millisecond timestamp in its top bytes; the lower bits
 | `Level2` | microseconds 0–999 | random                  | random           |
 | `Level3` | microseconds 0–999 | nanoseconds 0–999       | random (52 bits) |
 
-Because the precision bits sit immediately after the milliseconds, **lexicographic string order stays chronological** across all levels (subject to the tie-break caveat above). Unknown `Level` values fall back to `Level1`. The exact byte layout is documented in the `Generate` doc comment at [uuid.go:154](uuid.go:154), in [STARTHERE.md](STARTHERE.md) §4 and in `docs/SPEC.md` §3.1 — keep the three in sync if the bit layout ever changes.
+Because the precision bits sit immediately after the milliseconds, **lexicographic string order stays chronological** across all levels (subject to the tie-break caveat above). Unknown `Level` values fall back to `Level1`. The exact byte layout is documented in the `Generate` doc comment at [uuid.go:154](uuid.go:154), in [STARTHERE.md](STARTHERE.md) §4 and in `docs/SPEC.md` §3.1, and it is **written a second time in code** by `boundAt` in [bounds.go](bounds.go), which mirrors `Generate` field by field with the entropy replaced by a fill value — keep all four in sync if the bit layout ever changes. The duplication in `boundAt` is deliberate and recorded in `docs/SPEC.md` §11.2: the hot path must not pay a call to share it. `Generate` carries no pointer back, so a change there has to be followed into `bounds.go` by hand; the fixed vectors in `tests/bounds_test.go` are what catches it.
 
 **Entropy draws per level.** Level2/Level3 put the microseconds in `rand_a`, so they consume **one** 64-bit word; only Level1 (and unknown levels, which behave as Level1) consumes **two**. `tests/robustness_test.go` locks this in — it matters for callers who supply `crypto/rand` through `NewGeneratorWith`.
 

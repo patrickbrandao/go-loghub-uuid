@@ -261,3 +261,39 @@ func BenchmarkParse(b *testing.B) {
 		sinkU, _ = uuid.Parse(canonical)
 	}
 }
+
+// --- fronteiras de tempo ---
+
+// benchInstant é um instante fixo: o custo das fronteiras não deve
+// depender do relógio, e medir com um valor constante evita somar a
+// leitura de time.Now ao resultado.
+var benchInstant = time.Date(2026, 9, 11, 12, 34, 56, 123_456_789, time.UTC)
+
+func BenchmarkMinAtLevel1(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = uuid.MinAt(uuid.Level1, benchInstant)
+	}
+}
+
+func BenchmarkMinAtLevel3(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = uuid.MinAt(uuid.Level3, benchInstant)
+	}
+}
+
+func BenchmarkMaxAtLevel3(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = uuid.MaxAt(uuid.Level3, benchInstant)
+	}
+}
+
+func BenchmarkRangeAtLevel3(b *testing.B) {
+	fim := benchInstant.Add(time.Hour)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU, sinkU = uuid.RangeAt(uuid.Level3, benchInstant, fim)
+	}
+}

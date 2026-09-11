@@ -216,6 +216,10 @@ Mede nanossegundos por operação e alocações:
 - `BenchmarkGenerateV1Parallel` — custo do lock compartilhado pelas
   versões 1, 2 e 6, em contraste com o UUIDv7, que não tem lock.
 - `BenchmarkParse` — análise permissiva no formato canônico.
+- `BenchmarkMinAtLevel1/3`, `BenchmarkMaxAtLevel3` e
+  `BenchmarkRangeAtLevel3` — fronteiras de tempo para consulta por
+  intervalo. Medem sobre um instante fixo, para não somar a leitura do
+  relógio ao resultado.
 
 Os números de referência de todos eles estão na seção 4.
 
