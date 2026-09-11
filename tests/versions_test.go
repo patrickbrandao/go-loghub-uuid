@@ -162,11 +162,11 @@ func TestV6IsLexicographicallyOrdered(t *testing.T) {
 // e 7 fica próximo do relógio do sistema no momento da geração.
 func TestTimestampRoundTrip(t *testing.T) {
 	// Os testes de volume anteriores deixam o relógio interno adiantado:
-	// cada geração dentro do mesmo tique avança 100 nanossegundos. Trocar
-	// a sequência de relógio zera esse acúmulo, exatamente como aconteceria
-	// se o relógio do sistema tivesse voltado. Veja TestTimeBasedClockDrift.
-	uuid.SetClockSequence(0x0001)
-	uuid.SetClockSequence(0x0002)
+	// cada geração dentro do mesmo tique avança 100 nanossegundos. Sortear
+	// uma sequência inédita (-1) descarta esse acúmulo, que é a forma
+	// prevista para ressincronizar com o relógio do sistema. Veja
+	// TestTimeBasedClockDrift.
+	uuid.SetClockSequence(-1)
 	defer uuid.SetClockSequence(-1)
 
 	for _, tc := range []struct {
@@ -233,6 +233,58 @@ func TestTimestampWithLevelRecoversSubMillisecond(t *testing.T) {
 		if got := fine.Nanosecond() / 1_000 % 1_000; got != imported.Microseconds {
 			t.Errorf("nível %d: microssegundos %d, esperado %d", level, got, imported.Microseconds)
 		}
+	}
+}
+
+// TestTimestampWithLevelDiscardsOutOfRangeFields confere que, quando os
+// campos sub-milissegundo denunciam bits aleatórios (fora de 0..999),
+// TimestampWithLevel devolve apenas o milissegundo, sem somar o campo que
+// por acaso ainda caiba na faixa.
+func TestTimestampWithLevelDiscardsOutOfRangeFields(t *testing.T) {
+	// UUIDv7 montado à mão: rand_a = 0xFFF (4095, fora da faixa) e
+	// topo de rand_b = 5 nanossegundos (dentro da faixa).
+	base := uuid.UUID{
+		0x01, 0x92, 0xf7, 0xc5, 0x1a, 0x2b, // unix_ts_ms
+		0x7F, 0xFF, // versão 7 + rand_a = 0xFFF
+		0x80, 0x50, // variante 10 + nano = (0x00 << 4) | (0x50 >> 4) = 5
+		0, 0, 0, 0, 0, 0,
+	}
+	coarse, ok := base.Timestamp()
+	if !ok {
+		t.Fatal("Timestamp devolveu falso para um UUIDv7")
+	}
+
+	for _, level := range []uuid.Level{uuid.Level2, uuid.Level3} {
+		fine, ok := base.TimestampWithLevel(level)
+		if !ok {
+			t.Fatalf("nível %d: TimestampWithLevel devolveu falso", level)
+		}
+		if !fine.Equal(coarse) {
+			t.Errorf("nível %d: rand_a fora da faixa deveria devolver só o milissegundo; obtido %v, esperado %v",
+				level, fine, coarse)
+		}
+	}
+
+	// Caso simétrico: micro válido, nano fora da faixa (1023) no nível 3.
+	other := base
+	other[6], other[7] = 0x70, 0x07 // rand_a = 7 microssegundos
+	other[8], other[9] = 0xBF, 0xF0 // nano = (0x3F << 4) | 0xF = 1023
+	fine, _ := other.TimestampWithLevel(uuid.Level3)
+	if !fine.Equal(coarse) {
+		t.Errorf("nível 3 com nano fora da faixa deveria devolver só o milissegundo; obtido %v", fine)
+	}
+	// No nível 2 o nano é ignorado, então os 7 microssegundos valem.
+	fine, _ = other.TimestampWithLevel(uuid.Level2)
+	if want := coarse.Add(7 * time.Microsecond); !fine.Equal(want) {
+		t.Errorf("nível 2 deveria somar 7 microssegundos; obtido %v, esperado %v", fine, want)
+	}
+
+	// Caso válido nos dois campos: 7 microssegundos e 5 nanossegundos.
+	valid := base
+	valid[6], valid[7] = 0x70, 0x07
+	fine, _ = valid.TimestampWithLevel(uuid.Level3)
+	if want := coarse.Add(7*time.Microsecond + 5*time.Nanosecond); !fine.Equal(want) {
+		t.Errorf("nível 3 válido deveria somar 7 us e 5 ns; obtido %v, esperado %v", fine, want)
 	}
 }
 
@@ -340,8 +392,8 @@ func TestV4Uniqueness(t *testing.T) {
 func TestTimeBasedClockDrift(t *testing.T) {
 	const burst = 200_000
 
-	uuid.SetClockSequence(0x0003)
-	uuid.SetClockSequence(0x0004)
+	// Sequência inédita: começa sem adiantamento acumulado.
+	uuid.SetClockSequence(-1)
 	defer uuid.SetClockSequence(-1)
 
 	previous := uuid.GenerateV6()
@@ -388,6 +440,105 @@ func TestSetNodeIDSameNodeKeepsUniqueness(t *testing.T) {
 			t.Fatalf("repetição na geração %d após SetNodeID com o mesmo nó", i)
 		}
 		seen[u] = struct{}{}
+	}
+}
+
+// TestClockSequenceReuseNeverRepeats confere a invariante que garante a
+// unicidade dos UUIDv1/v6: para cada sequência de relógio, os instantes
+// emitidos são estritamente crescentes durante toda a vida do processo,
+// mesmo quando o chamador alterna entre sequências.
+//
+// REGRESSÃO: antes da correção, qualquer troca de sequência zerava o piso
+// do relógio interno. Uma rajada com a sequência A adiantava o relógio;
+// trocar para B e voltar para A zerava o piso e os próximos UUIDs de A
+// recebiam instantes já emitidos, repetindo valores.
+func TestClockSequenceReuseNeverRepeats(t *testing.T) {
+	const burst = 200_000
+	const seqA, seqB = 0x0AAA, 0x0BBB
+
+	defer uuid.SetClockSequence(-1)
+
+	seen := make(map[uuid.UUID]struct{}, burst+2_000)
+	record := func(name string, u uuid.UUID) {
+		t.Helper()
+		if _, dup := seen[u]; dup {
+			t.Fatalf("%s: UUID repetido %s", name, u)
+		}
+		seen[u] = struct{}{}
+	}
+
+	// Rajada com A: o relógio interno fica adiantado em até 20 ms.
+	uuid.SetClockSequence(seqA)
+	var lastA uuid.UUID
+	for i := 0; i < burst; i++ {
+		lastA = uuid.GenerateV6()
+		record("rajada A", lastA)
+	}
+	lastTimeA, _ := lastA.GregorianTime()
+
+	// B é inédita: o piso é descartado e B volta a acompanhar o relógio.
+	uuid.SetClockSequence(seqB)
+	for i := 0; i < 1_000; i++ {
+		record("rajada B", uuid.GenerateV6())
+	}
+
+	// De volta a A: o piso de A precisa ser restaurado. Nenhum UUID pode
+	// repetir e o primeiro instante tem de superar o último emitido com A.
+	uuid.SetClockSequence(seqA)
+	first := uuid.GenerateV6()
+	record("retorno a A", first)
+	if firstTime, _ := first.GregorianTime(); firstTime <= lastTimeA {
+		t.Fatalf("ao voltar para a sequência A o instante regrediu: %d depois de %d", firstTime, lastTimeA)
+	}
+	if seq, _ := first.ClockSequence(); seq != seqA {
+		t.Fatalf("sequência gravada %#x, esperado %#x", seq, seqA)
+	}
+	for i := 0; i < 1_000; i++ {
+		record("retorno a A", uuid.GenerateV6())
+	}
+}
+
+// TestSetClockSequenceRandomIsFresh confere que SetClockSequence(-1)
+// sempre sorteia uma sequência ainda não usada neste processo, e que só
+// essa troca para uma sequência inédita descarta o adiantamento.
+func TestSetClockSequenceRandomIsFresh(t *testing.T) {
+	defer uuid.SetClockSequence(-1)
+
+	used := map[int]bool{}
+	for _, explicit := range []int{0x0001, 0x0002, 0x0003} {
+		uuid.SetClockSequence(explicit)
+		uuid.GenerateV1()
+		used[uuid.ClockSequence()] = true
+	}
+	for i := 0; i < 50; i++ {
+		uuid.SetClockSequence(-1)
+		seq := uuid.ClockSequence()
+		if used[seq] {
+			t.Fatalf("sorteio %d devolveu a sequência %#x, que já tinha sido usada", i, seq)
+		}
+		used[seq] = true
+		uuid.GenerateV1()
+	}
+
+	// Voltar a uma sequência antiga mantém o piso dela: o instante do
+	// próximo UUID supera o último emitido com ela.
+	uuid.SetClockSequence(0x0001)
+	before := uuid.GenerateV1()
+	for i := 0; i < 10_000; i++ {
+		uuid.GenerateV1()
+	}
+	last := uuid.GenerateV1()
+	uuid.SetClockSequence(0x0002)
+	uuid.GenerateV1()
+	uuid.SetClockSequence(0x0001)
+	after := uuid.GenerateV1()
+
+	beforeTime, _ := before.GregorianTime()
+	lastTime, _ := last.GregorianTime()
+	afterTime, _ := after.GregorianTime()
+	if !(beforeTime < lastTime && lastTime < afterTime) {
+		t.Fatalf("instantes da sequência 0x0001 não são estritamente crescentes: %d, %d, %d",
+			beforeTime, lastTime, afterTime)
 	}
 }
 

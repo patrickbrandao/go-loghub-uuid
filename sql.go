@@ -1,7 +1,9 @@
 package loghubuuid
 
 import (
+	"bytes"
 	"database/sql/driver"
+	"encoding/json"
 	"errors"
 )
 
@@ -14,8 +16,14 @@ var ErrInvalidScanType = errors.New("loghubuuid: tipo nao suportado na leitura d
 // Aceita:
 //
 //	nil      — grava o UUID nulo
-//	string   — interpretado por Parse, em qualquer formato aceito
-//	[]byte   — 16 bytes viram o valor binário; outro tamanho é texto
+//	string   — interpretado por Parse, em qualquer formato aceito;
+//	           a string vazia grava o UUID nulo, sem erro
+//	[]byte   — 16 bytes viram o valor binário; vazio grava o UUID nulo;
+//	           outro tamanho é texto
+//
+// Texto vazio equivale a ausência de valor, como no pacote
+// github.com/google/uuid: colunas de texto cujo valor padrão é a string
+// vazia não devem falhar na leitura.
 //
 // Em caso de erro o receptor não é alterado.
 func (u *UUID) Scan(src any) error {
@@ -25,6 +33,10 @@ func (u *UUID) Scan(src any) error {
 		return nil
 
 	case string:
+		if v == "" {
+			*u = Nil
+			return nil
+		}
 		parsed, err := Parse(v)
 		if err != nil {
 			return err
@@ -33,6 +45,10 @@ func (u *UUID) Scan(src any) error {
 		return nil
 
 	case []byte:
+		if len(v) == 0 {
+			*u = Nil
+			return nil
+		}
 		if len(v) == 16 {
 			copy(u[:], v)
 			return nil
@@ -45,6 +61,20 @@ func (u *UUID) Scan(src any) error {
 		return nil
 	}
 	return ErrInvalidScanType
+}
+
+// isAbsentScanValue informa se o valor vindo do banco representa ausência
+// de UUID: NULL, string vazia ou fatia de bytes vazia.
+func isAbsentScanValue(src any) bool {
+	switch v := src.(type) {
+	case nil:
+		return true
+	case string:
+		return v == ""
+	case []byte:
+		return len(v) == 0
+	}
+	return false
 }
 
 // Value entrega o UUID ao banco de dados como a string canônica,
@@ -63,9 +93,10 @@ type NullUUID struct {
 	Valid bool // Valid é falso quando a coluna era NULL
 }
 
-// Scan implementa sql.Scanner.
+// Scan implementa sql.Scanner. NULL, string vazia e fatia de bytes vazia
+// produzem valor ausente (Valid falso), sem erro.
 func (n *NullUUID) Scan(src any) error {
-	if src == nil {
+	if isAbsentScanValue(src) {
 		n.UUID, n.Valid = Nil, false
 		return nil
 	}
@@ -97,7 +128,17 @@ func (n NullUUID) MarshalJSON() ([]byte, error) {
 	return buf, nil
 }
 
-// UnmarshalJSON lê a string canônica, ou null.
+// UnmarshalJSON lê uma string JSON em qualquer formato aceito por Parse,
+// ou null.
+//
+// O caso comum, uma string sem sequências de escape, é lido direto dos
+// bytes, sem alocar. Se a string contiver escapes JSON (por exemplo
+// \u0030 no lugar de 0), a decodificação é delegada ao encoding/json,
+// que os interpreta como faria para o tipo UUID; isso custa uma alocação
+// e só acontece nesse caso raro. Erros de sintaxe JSON viram
+// ErrInvalidFormat.
+//
+// Em caso de erro o receptor não é alterado.
 func (n *NullUUID) UnmarshalJSON(data []byte) error {
 	if string(data) == "null" {
 		n.UUID, n.Valid = Nil, false
@@ -106,7 +147,19 @@ func (n *NullUUID) UnmarshalJSON(data []byte) error {
 	if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
 		return ErrInvalidFormat
 	}
-	parsed, err := ParseBytes(data[1 : len(data)-1])
+	raw := data[1 : len(data)-1]
+	if bytes.IndexByte(raw, '\\') >= 0 {
+		var parsed UUID
+		if err := json.Unmarshal(data, &parsed); err != nil {
+			if errors.Is(err, ErrInvalidFormat) {
+				return err
+			}
+			return ErrInvalidFormat
+		}
+		n.UUID, n.Valid = parsed, true
+		return nil
+	}
+	parsed, err := ParseBytes(raw)
 	if err != nil {
 		return err
 	}

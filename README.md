@@ -1,5 +1,7 @@
 # go-loghub-uuid
 
+[![ci](https://github.com/patrickbrandao/go-loghub-uuid/actions/workflows/ci.yml/badge.svg)](https://github.com/patrickbrandao/go-loghub-uuid/actions/workflows/ci.yml)
+
 Biblioteca Go leve e rápida para gerar **UUIDv7** (RFC 9562) com **três
 níveis de precisão temporal**, conversões string⇄binário e importação
 das propriedades de tempo. Gera também **todas as demais versões de
@@ -152,6 +154,7 @@ uso a que a biblioteca se destina — o gerador padrão é adequado.
 ## Mais
 
 - **Mapa completo do projeto**: [STARTHERE.md](STARTHERE.md)
+- **Histórico de mudanças**: [CHANGELOG.md](CHANGELOG.md)
 - Vindo do pacote `github.com/google/uuid`:
   [docs/MIGRATION.md](docs/MIGRATION.md)
 - Uso rápido: [docs/DEPLOY-FAST.md](docs/DEPLOY-FAST.md)

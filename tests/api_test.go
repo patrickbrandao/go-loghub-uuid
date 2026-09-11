@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	uuid "github.com/patrickbrandao/go-loghub-uuid"
@@ -92,6 +93,17 @@ func TestInvalidLengthIsDistinguishable(t *testing.T) {
 	_, err = uuid.Parse("0192f7c5-1a2b-7c3d-8e4f-aabbccddeezz")
 	if uuid.IsInvalidLengthError(err) {
 		t.Error("dígito inválido foi classificado como erro de comprimento")
+	}
+
+	// Como no pacote github.com/google/uuid, o reconhecimento atravessa
+	// camadas que embrulham o erro com %w.
+	_, err = uuid.Parse("abc")
+	wrapped := fmt.Errorf("lendo identificador: %w", err)
+	if !uuid.IsInvalidLengthError(wrapped) {
+		t.Errorf("erro de comprimento embrulhado não reconhecido: %v", wrapped)
+	}
+	if uuid.IsInvalidLengthError(nil) || uuid.IsInvalidLengthError(errors.New("outro")) {
+		t.Error("IsInvalidLengthError aceitou um erro que não é de comprimento")
 	}
 }
 
@@ -332,6 +344,23 @@ func TestSQLScanAndValue(t *testing.T) {
 	if err := u.Scan(42); !errors.Is(err, uuid.ErrInvalidScanType) {
 		t.Errorf("Scan de inteiro: erro %v, esperado ErrInvalidScanType", err)
 	}
+
+	// Texto vazio é ausência de valor, como no pacote github.com/google/uuid:
+	// grava o UUID nulo e não devolve erro.
+	u = reference
+	if err := u.Scan(""); err != nil || !u.IsZero() {
+		t.Errorf("Scan de string vazia: %s, erro %v, esperado UUID nulo sem erro", u, err)
+	}
+	u = reference
+	if err := u.Scan([]byte{}); err != nil || !u.IsZero() {
+		t.Errorf("Scan de bytes vazios: %s, erro %v, esperado UUID nulo sem erro", u, err)
+	}
+
+	// Em caso de erro o receptor não é alterado.
+	u = reference
+	if err := u.Scan("invalido"); err == nil || u != reference {
+		t.Errorf("Scan de texto inválido: %s, erro %v, esperado erro sem alterar o receptor", u, err)
+	}
 }
 
 // TestNullUUID confere o tipo que aceita coluna nula.
@@ -351,6 +380,50 @@ func TestNullUUID(t *testing.T) {
 
 	if err := n.Scan(canonical); err != nil || !n.Valid || n.UUID != reference {
 		t.Errorf("Scan com valor: %+v, erro %v", n, err)
+	}
+
+	// Escapes JSON precisam ser interpretados como o encoding/json faria
+	// para o tipo UUID: \u0030 vale 0, \u002d vale o hífen.
+	// REGRESSÃO: antes da correção, o conteúdo entre aspas era passado cru
+	// a ParseBytes e qualquer escape era recusado como formato inválido.
+	escaped := `"\u0030192f7c5\u002d1a2b-7c3d-8e4f-aabbccddeeff"`
+	var fromEscaped uuid.NullUUID
+	if err := json.Unmarshal([]byte(escaped), &fromEscaped); err != nil || !fromEscaped.Valid || fromEscaped.UUID != reference {
+		t.Errorf("JSON com escapes: %+v, erro %v, esperado %s válido", fromEscaped, err, reference)
+	}
+	// O mesmo JSON precisa produzir o mesmo valor no tipo UUID.
+	var plain uuid.UUID
+	if err := json.Unmarshal([]byte(escaped), &plain); err != nil || plain != fromEscaped.UUID {
+		t.Errorf("UUID e NullUUID divergiram ao ler escapes: %s vs %s, erro %v", plain, fromEscaped.UUID, err)
+	}
+	// Escape inválido e conteúdo inválido após o escape são erros de
+	// formato, e o receptor não é alterado. A chamada é direta ao método
+	// porque json.Unmarshal rejeita o documento com escape inválido antes
+	// de chegar a ele; o que se testa aqui é a conversão feita pelo método.
+	kept := fromEscaped
+	for _, bad := range []string{`"\x0192f7c5-1a2b-7c3d-8e4f-aabbccddeeff"`, `"\u0030192f7c5-1a2b-7c3d-8e4f-aabbccddeezz"`} {
+		err := fromEscaped.UnmarshalJSON([]byte(bad))
+		if !errors.Is(err, uuid.ErrInvalidFormat) {
+			t.Errorf("JSON %s: erro %v, esperado ErrInvalidFormat", bad, err)
+		}
+		if fromEscaped != kept {
+			t.Errorf("JSON %s alterou o receptor mesmo falhando: %+v", bad, fromEscaped)
+		}
+	}
+
+	// Texto vazio produz valor ausente, sem erro, como no pacote de origem.
+	for name, empty := range map[string]any{"string vazia": "", "bytes vazios": []byte{}} {
+		n.Scan(canonical) //nolint:errcheck // reposiciona um valor válido antes de cada caso
+		if err := n.Scan(empty); err != nil || n.Valid || !n.UUID.IsZero() {
+			t.Errorf("Scan de %s: %+v, erro %v, esperado valor ausente sem erro", name, n, err)
+		}
+	}
+	if err := n.Scan("invalido"); err == nil || n.Valid {
+		t.Errorf("Scan de texto inválido: %+v, erro %v, esperado erro com Valid falso", n, err)
+	}
+
+	if err := n.Scan(canonical); err != nil || !n.Valid || n.UUID != reference {
+		t.Errorf("Scan com valor após ausência: %+v, erro %v", n, err)
 	}
 	encoded, err := json.Marshal(n)
 	if err != nil || string(encoded) != `"`+canonical+`"` {

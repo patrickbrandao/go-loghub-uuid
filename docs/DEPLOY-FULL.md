@@ -37,10 +37,15 @@ import uuid "github.com/patrickbrandao/go-loghub-uuid"
 type Time struct {
 	Seconds      int64 // timestamp Unix (segundos)
 	Milliseconds int   // 0..999
-	Microseconds int   // 0..999
-	Nanoseconds  int   // 0..999
+	Microseconds int   // 0..999 em Level2/Level3; 0..4095 em Level1 (12 bits aleatorios)
+	Nanoseconds  int   // 0..999 em Level3; 0..1023 em Level1/Level2 (10 bits aleatorios)
 }
 ```
+
+> A importação é cega quanto ao nível (ver abaixo): em UUIDs de Nível 1 os
+> campos `Microseconds` e `Nanoseconds` são bits aleatórios lidos como se
+> fossem tempo, e por isso podem ultrapassar 999. Não valide esses campos
+> contra 0..999 sem saber o nível de origem.
 
 ---
 
@@ -304,6 +309,17 @@ fica ligeiramente à frente do relógio do sistema. Isso garante a ordem,
 mas significa que o carimbo de tempo de um UUIDv1 ou UUIDv6 não é leitura
 fiel do relógio sob carga sustentada.
 
+Para descartar esse adiantamento e voltar a acompanhar o relógio do
+sistema, sorteie uma sequência de relógio inédita:
+
+```go
+uuid.SetClockSequence(-1)
+```
+
+Cada sequência lembra o último instante que emitiu, então voltar a uma
+sequência já usada (`uuid.SetClockSequence(valor)`) continua a partir do
+ponto em que ela parou e nunca repete um UUID.
+
 ### Versão 2 — DCE Security
 
 ```go
@@ -391,8 +407,9 @@ _, err = db.Exec("INSERT INTO registros (id, nome) VALUES ($1, $2)", r.ID, r.Nom
 ```
 
 `Scan` aceita `NULL`, texto em qualquer formato reconhecido por `Parse` e
-16 bytes crus. `Value` grava a string canônica; para coluna binária,
-passe `r.ID[:]` explicitamente.
+16 bytes crus. Texto vazio (string ou bytes) equivale a `NULL`: grava o
+UUID nulo sem erro e, em `NullUUID`, deixa `Valid` falso. `Value` grava a
+string canônica; para coluna binária, passe `r.ID[:]` explicitamente.
 
 ## Quando usar cada nível
 

@@ -1,5 +1,7 @@
 package loghubuuid
 
+import "errors"
+
 // Erros mais específicos devolvidos por Parse e ParseBytes. Todos embrulham
 // ErrInvalidFormat, portanto errors.Is(err, ErrInvalidFormat) continua
 // verdadeiro e quem já trata o sentinela antigo não precisa mudar nada.
@@ -80,9 +82,12 @@ func FromBytes(b []byte) (UUID, error) {
 	return u, nil
 }
 
-// IsInvalidLengthError informa se o erro veio de um comprimento incorreto.
+// IsInvalidLengthError informa se o erro veio de um comprimento incorreto,
+// mesmo que tenha sido embrulhado por outra camada com fmt.Errorf e %w.
+// Equivale a errors.Is(err, ErrInvalidLength), como no pacote
+// github.com/google/uuid.
 func IsInvalidLengthError(err error) bool {
-	return err == ErrInvalidLength
+	return errors.Is(err, ErrInvalidLength)
 }
 
 // parseAny concentra a lógica de Parse e ParseBytes. O parâmetro de tipo

@@ -46,8 +46,19 @@ E também `uuid.Parse`, `uuid.ParseBytes`, `uuid.MustParse`, `uuid.Must`,
 `MarshalBinary`, `UnmarshalBinary`, `Scan`, `Value` e do tipo
 `NullUUID`.
 
-As funções que devolvem erro **nunca falham** aqui: o erro devolvido é
-sempre nulo, e existe apenas para manter a forma da assinatura.
+Sobre o erro devolvido por esses apelidos: `NewUUID`, `NewV6`,
+`NewDCESecurity`, `NewDCEPerson` e `NewDCEGroup` **nunca falham**; o
+erro existe apenas para manter a forma da assinatura. `NewRandom` e
+`NewV7` devolvem `ErrEntropySource` se a leitura de `crypto/rand` falhar
+(impossível a partir do Go 1.24, em que o próprio runtime encerra o
+processo). `NewRandomFromReader` e `NewV7FromReader` devolvem
+`ErrEntropySource` quando o leitor é nulo ou se esgota antes de entregar
+os bytes pedidos.
+
+`Scan` segue a mesma convenção do pacote de origem para valores ausentes:
+`NULL`, string vazia e fatia de bytes vazia gravam o UUID nulo sem erro
+(em `NullUUID`, produzem `Valid` falso). `IsInvalidLengthError` reconhece
+o erro de comprimento mesmo depois de embrulhado com `%w`, como lá.
 
 > **Entropia dos apelidos de compatibilidade:** Os apelidos `New()`,
 > `NewString()`, `NewRandom()` e `NewV7()` usam internamente um gerador
@@ -96,6 +107,15 @@ tique de relógio, o pacote `google/uuid` incrementa a sequência de
 relógio e mantém o carimbo inalterado, enquanto esta biblioteca adianta o
 relógio em um tique de 100 ns por geração. Ambas as abordagens são
 válidas segundo a RFC 9562, mas diferem no carimbo gravado sob rajada.
+
+**`SetClockSequence` mantém um piso por sequência.** No pacote
+`google/uuid`, qualquer troca de sequência descarta o último instante
+emitido, o que permite repetir um UUIDv1 ao voltar para uma sequência já
+usada enquanto o relógio real ainda está atrás do adiantamento acumulado.
+Aqui cada sequência lembra o último instante que emitiu: voltar a ela
+continua a partir dali, e só a entrada em uma sequência inédita descarta o
+adiantamento. `SetClockSequence(-1)` sorteia sempre uma sequência inédita,
+e por isso é a forma de ressincronizar com o relógio do sistema.
 
 **Sem `SetRand`.** Trocar a entropia do gerador padrão em tempo de
 execução exigiria uma leitura atômica no caminho quente da geração. Em

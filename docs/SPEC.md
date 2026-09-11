@@ -162,12 +162,18 @@ reforma do calendário gregoriano em **1582-10-15T00:00:00Z**.
 - `node` (48 bits, bytes 10..15): identificador de nó (endereço MAC ou pseudoaleatório).
 
 #### Estrutura da Versão 6 (K-Sortable Gregoriano):
-Reorganiza os 60 bits de tempo em ordem natural do mais ao menos significativo:
-- Bytes 0..4: 40 bits mais altos de `now` (bits 59..20).
-- Bytes 5..6 (nibble alto): 8 bits do meio (bits 19..12).
+Reorganiza os 60 bits de tempo em ordem natural do mais ao menos
+significativo, conforme a RFC 9562 §5.6 (`time_high`, `time_mid`, `ver`,
+`time_low`):
+- `time_high` (32 bits, bytes 0..3): bits 59..28 de `now` (`now >> 28`).
+- `time_mid` (16 bits, bytes 4..5): bits 27..12 de `now` (`now >> 12`).
 - Byte 6: nibble alto = versão `0x6`; nibble baixo = bits 11..8 de `now`.
-- Byte 7: 8 bits mais baixos de `now` (bits 7..0).
+- Byte 7: bits 7..0 de `now`. Juntos, o nibble baixo do byte 6 e o byte 7
+  formam `time_low` (12 bits, `now & 0x0FFF`).
 - Bytes 8..15: idênticos à versão 1 (sequência de relógio e nó).
+
+A leitura inversa recompõe `now` como
+`time_high << 28 | time_mid << 12 | time_low`.
 
 ### 4.2 Estado Monotônico Compartilhado (v1, v2 e v6)
 
@@ -188,11 +194,39 @@ A geração de UUIDs baseados em tempo requer sincronização segura:
      permite que a próxima chamada leia o relógio físico atual que pode
      estar atrás do tempo acumulado por adiantamento, gerando colisões de
      identificadores.
-3. **Identificador de Nó**:
-   - Se o sistema possuir placa de rede, usa o MAC address.
-   - Se não houver MAC ou se for sorteado aleatoriamente, o **bit 0 do
-     byte 10 (bit multicast) DEVE ser setado em 1**, indicando que não é
-     um endereço MAC físico real (RFC 9562, §6.10).
+3. **Piso de Relógio por Sequência (Troca de Sequência sem Repetição)**:
+   - Zerar o piso do relógio em **qualquer** troca de sequência (como faz
+     o pacote `google/uuid`) também repete UUIDs: com a sequência `A`
+     adiantada até o instante 1000, trocar para `B` (piso zerado, relógio
+     real em 900) e voltar para `A` faz `A` emitir de novo instantes que
+     já emitiu.
+   - **Invariante obrigatória**: para cada sequência de relógio, os
+     instantes emitidos com ela são **estritamente crescentes durante
+     toda a vida do processo**. Como o par (instante, sequência) nunca se
+     repete, nenhum UUIDv1/v6 se repete, independentemente de trocas de
+     nó ou de sequência.
+   - **Implementação**: guardar, por sequência já usada, o último instante
+     emitido. Ao trocar de sequência, salvar o último instante da
+     sequência que sai e adotar como piso o último instante da sequência
+     que entra (zero se inédita). Só a entrada em uma sequência inédita
+     descarta o adiantamento acumulado.
+   - O pedido de sequência aleatória (`-1`) **DEVE** sortear uma sequência
+     ainda não usada no processo (sorteio de 14 bits e avanço até a
+     primeira livre), para que ele sirva de ressincronização
+     determinística com o relógio do sistema. Se todas as 16384 estiverem
+     usadas, aceitar o sorteio; o piso por sequência continua impedindo a
+     repetição.
+4. **Identificador de Nó**:
+   - A biblioteca **NÃO lê interfaces de rede**. O nó padrão é sorteado
+     uma única vez, a partir da fonte criptográfica do sistema, com o
+     **bit 0 do byte 10 (bit multicast) setado em 1**, indicando que não
+     é um endereço MAC físico real. É a forma recomendada pela RFC 9562
+     §6.10 para quando o endereço MAC não está disponível ou não é
+     desejado; ela também evita expor a identidade da máquina.
+   - O chamador pode fornecer um nó próprio (por exemplo, um MAC real
+     lido fora da biblioteca) por `SetNodeID`, que copia os 6 primeiros
+     bytes sem alterá-los. A responsabilidade pelo bit multicast, nesse
+     caso, é do chamador.
 
 ### 4.3 Versão 2 (DCE 1.1 Security)
 
@@ -338,10 +372,15 @@ A biblioteca deve disponibilizar operações de consulta:
   - Para v1 e v6: retorna os 14 bits completos da sequência.
   - Para v2: retorna **apenas os 6 bits mais altos** (0 a 63).
   - Para demais versões: retorna falso.
-- **`GetTime() (GregorianTime, int, bool)`**: devolve o tempo gregoriano
-  e a sequência no formato `0..0x3fff` (14 bits, bit `0x8000` limpo).
+- **`GetTime() (GregorianTime, uint16)`**: devolve o tempo gregoriano
+  corrente, avançando o relógio interno como faria uma geração de UUIDv1,
+  e a sequência de relógio de 14 bits **com os dois bits de variante já
+  posicionados** (bit `0x8000` ligado, bit `0x4000` desligado), pronta
+  para ser gravada nos bytes 8 e 9. Para obter só a sequência, mascare
+  com `0x3FFF` ou use `ClockSequence()`.
 - **`Domain() (Domain, bool)`** e **`ID() (uint32, bool)`**: para UUIDv2.
-- **`NodeID() ([]byte, bool)`**: para v1, v2 e v6 (6 bytes).
+- **`NodeID() []byte`** (método de `UUID`): devolve uma cópia dos 6 bytes
+  de nó para v1, v2 e v6, e `nil` para as demais versões.
 
 ---
 
@@ -402,8 +441,14 @@ reais:
    - Com gerador de contagem determinística, verificar que Nível 2 e
      Nível 3 consomem 1 chamada; Nível 1 consome 2 chamadas.
 5. **Vetores Dourados da RFC 9562 para Versões Baseadas em Hash**:
-   - Validar que V3 e V5 produzem exatamente os hashes conhecidos da
-     especificação para espaços de nomes conhecidos (DNS, URL).
+   - Validar que V3 e V5 produzem exatamente os vetores publicados na
+     RFC 9562 (Apêndice A), que usam o espaço `NameSpaceDNS` e o nome
+     `www.example.com`:
+     - V3: `5df41881-3aed-3515-88a7-2f4a814cf09e`
+     - V5: `2ed6657d-e927-568b-95e1-2665a8aea6a2`
+   - A RFC não publica vetores para os demais espaços de nomes; vetores
+     adicionais só devem entrar na suíte se forem calculados por uma
+     implementação independente.
 6. **Ordenação Temporal Coerente**:
    - Testar que se o instante de B for estritamente superior ao instante de
      A, a comparação de strings e de bytes de B é estritamente maior que a

@@ -55,6 +55,15 @@ var (
 	clockSeq      uint16 // valor zero significa "ainda não inicializada"
 	nodeIdentity  [6]byte
 	nodeAssigned  bool
+
+	// seqLastTime guarda, para cada sequência de relógio já usada neste
+	// processo (com o bit 15 ligado, como em clockSeq), o último instante
+	// emitido com ela. É o que garante a invariante de unicidade: os
+	// instantes emitidos com uma mesma sequência são estritamente
+	// crescentes durante toda a vida do processo, mesmo que o chamador
+	// alterne entre sequências. Só é tocado nas trocas de sequência, nunca
+	// por geração; cresce no máximo até 16384 entradas.
+	seqLastTime map[uint16]uint64
 )
 
 // timeAndSequenceLocked devolve o instante gregoriano atual e a sequência
@@ -89,21 +98,60 @@ func gregorianFromUnix(sec, nsec int64) uint64 {
 	return uint64(sec)*10_000_000 + uint64(nsec/100) + gregorian100ns
 }
 
-// setClockSequenceLocked grava a sequência de relógio. O valor -1 pede um
-// sorteio. Exige clockMu travada.
+// setClockSequenceLocked grava a sequência de relógio. O valor -1 pede o
+// sorteio de uma sequência ainda não usada neste processo. Exige clockMu
+// travada.
+//
+// Ao trocar de sequência, o último instante emitido com a sequência
+// anterior é guardado, e o piso do relógio passa a ser o último instante
+// já emitido com a sequência nova (zero se ela nunca foi usada). Assim o
+// adiantamento acumulado só é descartado ao entrar em uma sequência
+// inédita, e voltar a uma sequência antiga nunca repete um instante dela.
 func setClockSequenceLocked(seq int) {
 	if seq == -1 {
-		var b [2]byte
-		fillRandom(b[:])
-		seq = int(b[0])<<8 | int(b[1])
+		seq = unusedSequenceLocked()
 	}
-	old := clockSeq
 	// O bit 15 marca "inicializada", já que só 14 bits vão para o UUID.
-	clockSeq = uint16(seq&0x3FFF) | 0x8000
-	if old != clockSeq {
-		// Sequência nova: o relógio anterior deixa de valer como piso.
-		lastClockTime = 0
+	next := uint16(seq&0x3FFF) | 0x8000
+	if next == clockSeq {
+		return
 	}
+	if seqLastTime == nil {
+		seqLastTime = make(map[uint16]uint64)
+	}
+	if clockSeq != 0 {
+		seqLastTime[clockSeq] = lastClockTime
+	}
+	clockSeq = next
+	lastClockTime = seqLastTime[next]
+}
+
+// sequenceUsedLocked informa se a sequência (com o bit 15 ligado) está em
+// uso ou já foi usada neste processo. Exige clockMu travada.
+func sequenceUsedLocked(seq uint16) bool {
+	if seq == clockSeq {
+		return true
+	}
+	_, used := seqLastTime[seq]
+	return used
+}
+
+// unusedSequenceLocked sorteia uma sequência de 14 bits que ainda não foi
+// usada neste processo: parte de um valor aleatório e avança até a
+// primeira livre. Se todas as 16384 já tiverem sido usadas, devolve o
+// sorteio original; o piso por sequência continua impedindo repetição.
+// Exige clockMu travada.
+func unusedSequenceLocked() int {
+	var b [2]byte
+	fillRandom(b[:])
+	start := (int(b[0])<<8 | int(b[1])) & 0x3FFF
+	for i := 0; i < 1<<14; i++ {
+		candidate := (start + i) & 0x3FFF
+		if !sequenceUsedLocked(uint16(candidate) | 0x8000) {
+			return candidate
+		}
+	}
+	return start
 }
 
 // nodeLocked devolve o identificador de nó de 48 bits, sorteando um na
@@ -148,7 +196,22 @@ func ClockSequence() int {
 }
 
 // SetClockSequence fixa a sequência de relógio. Só os 14 bits baixos são
-// usados. O valor -1 pede um sorteio novo.
+// usados. O valor -1 sorteia uma sequência ainda não usada neste processo.
+//
+// A biblioteca mantém um piso de relógio por sequência: ao entrar em uma
+// sequência, o próximo instante emitido é estritamente maior que qualquer
+// instante já emitido com ela. Consequências:
+//
+//   - Um valor explícito pode ser reutilizado à vontade; voltar a uma
+//     sequência antiga herda o piso dela e nunca repete um UUIDv1/v6.
+//   - O adiantamento acumulado do relógio interno só é descartado ao
+//     entrar em uma sequência inédita. Para ressincronizar com o relógio
+//     do sistema (por exemplo, após detectar que ele foi atrasado), use
+//     -1, que garante uma sequência inédita enquanto houver alguma livre.
+//
+// Isto difere do pacote github.com/google/uuid, que descarta o piso em
+// qualquer troca de sequência e por isso pode repetir um UUIDv1 ao voltar
+// a uma sequência já usada.
 func SetClockSequence(seq int) {
 	clockMu.Lock()
 	defer clockMu.Unlock()

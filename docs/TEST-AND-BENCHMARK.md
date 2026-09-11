@@ -48,6 +48,17 @@ o detector de corrida sem registrar alertas:
 go test ./... -race
 ```
 
+Sob o detector, as travas de alocação que dependem do gerador padrão
+(`TestGenerateZeroAllocations`, `TestGenerateStringSingleAllocation` e
+`TestGenerateV4ZeroAllocations`) são puladas: o `sync.Pool` compilado com
+`-race` descarta de propósito um em cada quatro itens devolvidos, e as
+realocações resultantes seriam contadas como se fossem da biblioteca.
+Meça as alocações sem o detector:
+
+```bash
+go test ./tests/ -short -run 'Allocations|SingleAllocation' -v
+```
+
 ### Fuzzing
 
 Cobrem mutações e entradas arbitrárias contra o parser:
@@ -59,6 +70,26 @@ go test ./tests/ -run '^$' -fuzz FuzzFromString -fuzztime 60s
 # Fuzz do analisador permissivo (quatro formatos)
 go test ./tests/ -run '^$' -fuzz FuzzParse -fuzztime 60s
 ```
+
+### Integração contínua
+
+O fluxo em `.github/workflows/ci.yml` executa automaticamente, a cada
+push, pull request e tag, na versão mínima declarada em `go.mod` (1.22)
+e na versão estável mais recente:
+
+```bash
+gofmt -l .                      # só na versão estável
+go vet ./...
+go build ./...
+go test ./... -race -short
+go test ./tests/ -short -run 'Allocations|SingleAllocation' -v   # travas de alocação, sem -race
+go test ./tests/ -run '^$' -bench 'BenchmarkGenerateLevel|BenchmarkFromString' -benchmem -benchtime 200000x
+```
+
+Toda segunda-feira, e sob demanda pela aba Actions, um segundo fluxo roda
+a suíte completa (com os testes de massa de 1.000.000) sob o detector de
+corrida e 60 segundos de fuzzing em cada analisador. Uma tag só deve ser
+publicada com o fluxo `test` verde no commit correspondente.
 
 ---
 

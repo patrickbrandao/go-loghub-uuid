@@ -6,10 +6,29 @@ import (
 	uuid "github.com/patrickbrandao/go-loghub-uuid"
 )
 
+// skipIfRaceDetector pula as travas de alocação que dependem do gerador
+// padrão quando a suíte roda com -race.
+//
+// Motivo: o sync.Pool da biblioteca padrão, compilado com o detector de
+// corrida, descarta de propósito um em cada quatro itens devolvidos por
+// Put (é assim que ele exercita o caso "item novo" sob o detector).
+// Cada descarte obriga o próximo Get a construir outro PRNG, e
+// testing.AllocsPerRun contabiliza essas realocações, que não existem
+// fora do -race. Em Go 1.22 isso fazia a trava falhar de forma
+// intermitente; a medição válida é a feita sem o detector, que o fluxo
+// de integração contínua executa em passo próprio.
+func skipIfRaceDetector(t *testing.T) {
+	t.Helper()
+	if raceDetectorEnabled {
+		t.Skip("trava de alocações pulada sob -race: o sync.Pool descarta itens ao acaso com o detector ativo")
+	}
+}
+
 // TestGenerateZeroAllocations trava a propriedade de "zero alocações" da
 // geração binária, exigida pela especificação (seção 8). Uma regressão
 // aqui indica que algum caminho quente passou a escapar para o heap.
 func TestGenerateZeroAllocations(t *testing.T) {
+	skipIfRaceDetector(t)
 	g := uuid.NewGenerator()
 	for _, level := range []uuid.Level{uuid.Level1, uuid.Level2, uuid.Level3} {
 		allocs := testing.AllocsPerRun(1_000, func() {
@@ -24,6 +43,7 @@ func TestGenerateZeroAllocations(t *testing.T) {
 // TestGenerateStringSingleAllocation trava o limite de uma única
 // alocação (a string final) na geração em texto.
 func TestGenerateStringSingleAllocation(t *testing.T) {
+	skipIfRaceDetector(t)
 	g := uuid.NewGenerator()
 	for _, level := range []uuid.Level{uuid.Level1, uuid.Level2, uuid.Level3} {
 		allocs := testing.AllocsPerRun(1_000, func() {
@@ -64,6 +84,7 @@ var sinkT uuid.Time
 // TestGenerateV4ZeroAllocations estende a trava de zero alocações ao
 // gerador de versão 4, que compartilha a mesma fonte de entropia.
 func TestGenerateV4ZeroAllocations(t *testing.T) {
+	skipIfRaceDetector(t)
 	g := uuid.NewGenerator()
 	allocs := testing.AllocsPerRun(1_000, func() {
 		sinkU = g.GenerateV4()

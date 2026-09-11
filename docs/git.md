@@ -19,6 +19,10 @@ git remote set-url origin https://github.com/patrickbrandao/go-loghub-uuid.git;
 git commit -m "Update";
 git push -u origin main;
 
+# Antes de criar a tag: confirmar que o fluxo "ci / test" está verde no
+# commit que será etiquetado (aba Actions do GitHub), ou rodar localmente
+#   go vet ./... && go test ./... -race -short
+
 # Cria a tag anotada para a nova versão (tags publicadas são imutáveis;
 # nunca sobrescreva tags com -f para não quebrar o sum.golang.org dos usuários)
 git tag -a v0.3.0 -m "Release version 0.3.0";

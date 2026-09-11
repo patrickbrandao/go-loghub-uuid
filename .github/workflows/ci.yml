@@ -1,0 +1,107 @@
+# Integração contínua da biblioteca go-loghub-uuid.
+#
+# Dois fluxos:
+#
+#   test   — a cada push, pull request e tag: formatação, vet, build e a
+#            suíte em modo -short sob o detector de corrida, na versão
+#            mínima declarada em go.mod e na versão estável mais recente.
+#            Inclui uma medição curta de alocações, para que uma regressão
+#            no caminho quente apareça no log.
+#
+#   deep   — semanalmente e sob demanda: a suíte completa (inclui os
+#            testes de massa de 1.000.000) e campanhas curtas de fuzzing
+#            dos dois analisadores de texto.
+#
+# Nenhum destes passos altera o repositório; o corpus gerado pelo
+# fuzzing só é gravado em caso de falha e fica em tests/testdata/fuzz,
+# que está no .gitignore.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  schedule:
+    # Toda segunda-feira às 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # "1.22" é a versão mínima declarada em go.mod; "stable" é a
+        # última versão estável publicada.
+        go: ["1.22", "stable"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+
+      - name: Versão do Go em uso
+        run: go version
+
+      - name: Formatação (gofmt)
+        # Só na versão estável: o gofmt pode mudar regras entre versões
+        # (por exemplo, a reescrita de aspas em comentários de documentação).
+        if: matrix.go == 'stable'
+        run: |
+          arquivos="$(gofmt -l .)"
+          if [ -n "$arquivos" ]; then
+            echo "Arquivos fora do padrão gofmt:"
+            echo "$arquivos"
+            exit 1
+          fi
+
+      - name: Análise estática (go vet)
+        run: go vet ./...
+
+      - name: Compilação
+        run: go build ./...
+
+      - name: Testes com detector de corrida (modo -short)
+        run: go test ./... -race -short
+
+      - name: Travas de alocação (sem detector de corrida)
+        # As travas que dependem do gerador padrão são puladas sob -race,
+        # porque o sync.Pool descarta itens ao acaso com o detector ativo.
+        # Este passo é a medição que vale.
+        run: go test ./tests/ -short -run 'Allocations|SingleAllocation' -v
+
+      - name: Alocações no caminho quente (benchmark curto)
+        run: go test ./tests/ -run '^$' -bench 'BenchmarkGenerateLevel|BenchmarkFromString' -benchmem -benchtime 200000x
+
+  deep:
+    name: suíte completa e fuzzing
+    # Só no agendamento semanal e sob demanda: os testes de massa e o
+    # fuzzing levam minutos e não precisam rodar a cada push.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+
+      - name: Suíte completa (inclui massa de 1.000.000) com detector de corrida
+        run: go test ./... -race -v -timeout 20m
+
+      - name: Fuzzing do analisador estrito
+        run: go test ./tests/ -run '^$' -fuzz FuzzFromString -fuzztime 60s
+
+      - name: Fuzzing do analisador permissivo
+        run: go test ./tests/ -run '^$' -fuzz FuzzParse -fuzztime 60s

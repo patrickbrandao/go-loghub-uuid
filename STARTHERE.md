@@ -25,6 +25,7 @@ que foi acrescentado vive em arquivos próprios e não o atravessa.
 go-loghub-uuid/
 │
 ├── go.mod                  # módulo: github.com/patrickbrandao/go-loghub-uuid
+├── .github/workflows/ci.yml # integração contínua (vet, build, testes com -race, fuzzing semanal)
 │
 │   # PRODUÇÃO — núcleo do UUIDv7 (caminho quente, sem trava, sem alocação)
 ├── uuid.go                 # tipos, Generator, geração por nível
@@ -51,6 +52,7 @@ go-loghub-uuid/
 │
 ├── README.md               # descrição rápida + uso rápido
 ├── STARTHERE.md            # este mapa
+├── CHANGELOG.md            # histórico de mudanças por versão e propostas em aberto
 ├── LICENSE                 # MIT
 ├── CLAUDE.md               # instruções de manutenção (ferramental)
 │
@@ -73,6 +75,8 @@ go-loghub-uuid/
     ├── ordering_test.go        # ordenação, unicidade e concorrência
     ├── robustness_test.go      # bordas do Generator e consumo de entropia
     ├── alloc_test.go           # trava de zero alocações
+    ├── race_enabled_test.go    # tag race: sinaliza o detector de corrida
+    ├── race_disabled_test.go   # tag !race: idem
     ├── fuzz_test.go            # FuzzFromString e FuzzParse
     ├── benchmark_test.go       # benchmarks + massa de 1.000.000
     └── benchmark-bulk/
@@ -80,10 +84,12 @@ go-loghub-uuid/
 ```
 
 A **raiz** contém apenas o necessário para usar a biblioteca em produção
-(os arquivos `.go`, o `go.mod`, README/STARTHERE/LICENSE) mais o arquivo
-de suporte ao desenvolvimento (`CLAUDE.md`) e o teste interno de funções
-puras do relógio (`clock_internal_test.go`). Documentação,
-especificação, relatórios e testes ficam em pastas próprias.
+(os arquivos `.go`, o `go.mod`, README/STARTHERE/CHANGELOG/LICENSE) mais o arquivo
+de suporte ao desenvolvimento (`CLAUDE.md`), o teste interno de funções
+puras do relógio (`clock_internal_test.go`) e a configuração de
+integração contínua em `.github/`, que o GitHub exige nesse local.
+Documentação, especificação, relatórios e testes ficam em pastas
+próprias.
 
 ---
 

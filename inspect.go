@@ -51,9 +51,12 @@ func (u UUID) Timestamp() (time.Time, bool) {
 // reconstruindo a precisão sub-milissegundo gravada pelo nível informado.
 //
 // O nível não pode ser deduzido do UUID, por isso precisa ser informado
-// pelo chamador. Se os campos lidos estiverem fora da faixa 0 a 999 — o
-// que denuncia bits aleatórios, e não tempo — o excedente é descartado e
-// devolve-se apenas o milissegundo.
+// pelo chamador. Se algum campo lido estiver fora da faixa 0 a 999 — o
+// que denuncia bits aleatórios, e não tempo — todos os campos
+// sub-milissegundo são descartados e devolve-se apenas o milissegundo.
+// No nível 3 os dois campos vêm da mesma geração: um rand_a fora da
+// faixa prova que o topo de rand_b também é ruído, mesmo que caiba em
+// 0 a 999 por acaso.
 //
 // Devolve falso se o UUID não for de versão 7.
 func (u UUID) TimestampWithLevel(level Level) (time.Time, bool) {
@@ -71,11 +74,8 @@ func (u UUID) TimestampWithLevel(level Level) (time.Time, bool) {
 			t = t.Add(time.Duration(micro) * time.Microsecond)
 		}
 	case Level3:
-		if micro <= 999 {
-			t = t.Add(time.Duration(micro) * time.Microsecond)
-		}
-		if nano <= 999 {
-			t = t.Add(time.Duration(nano) * time.Nanosecond)
+		if micro <= 999 && nano <= 999 {
+			t = t.Add(time.Duration(micro)*time.Microsecond + time.Duration(nano)*time.Nanosecond)
 		}
 	}
 	return t, true
