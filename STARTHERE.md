@@ -54,7 +54,7 @@ go-loghub-uuid/
 │
 ├── README.md               # descrição rápida + uso rápido
 ├── STARTHERE.md            # este mapa
-├── CHANGELOG.md            # histórico de mudanças por versão e propostas em aberto
+├── CHANGELOG.md            # histórico de mudanças e decisões por versão
 ├── LICENSE                 # MIT
 ├── SECURITY.md             # como relatar vulnerabilidade e o modelo de ameaça documentado
 ├── CONTRIBUTING.md         # convenções e verificação local para quem contribui
@@ -65,7 +65,7 @@ go-loghub-uuid/
 │   ├── DEPLOY-FULL.md
 │   ├── MIGRATION.md        # vindo do pacote github.com/google/uuid
 │   ├── TEST-AND-BENCHMARK.md
-│   ├── SPEC.md             # como reimplementar do zero (sem código)
+│   ├── SPEC.md             # reimplementar do zero; §11 = decisões firmadas
 │   └── RELEASE.md          # procedimento de publicação de versão
 │
 └── tests/                  # tudo que NÃO vai para produção
@@ -79,8 +79,7 @@ go-loghub-uuid/
     ├── ordering_test.go        # ordenação, unicidade e concorrência
     ├── robustness_test.go      # bordas do Generator e consumo de entropia
     ├── alloc_test.go           # trava de zero alocações
-    ├── race_enabled_test.go    # tag race: sinaliza o detector de corrida
-    ├── race_disabled_test.go   # tag !race: idem
+    ├── clockstate_test.go      # isolamento do nó e da sequência entre testes
     ├── fuzz_test.go            # FuzzFromString, FuzzParse e FuzzNullUUIDJSON
     ├── benchmark_test.go       # benchmarks + massa de 1.000.000
     └── benchmark-bulk/
@@ -268,6 +267,9 @@ por string continua cronológica.
 - **Quero medir desempenho**: [docs/TEST-AND-BENCHMARK.md](docs/TEST-AND-BENCHMARK.md)
 - **Quero reimplementar em outra linguagem**:
   [docs/SPEC.md](docs/SPEC.md)
+- **Quero propor uma mudança de projeto, ou vou auditar a biblioteca**:
+  [docs/SPEC.md](docs/SPEC.md) seção 11, o registro de decisões firmadas
+  — o que já foi decidido, por quê, e o que justificaria rever.
 - **Quero ler o código**: comece por `uuid.go` (geração), depois
   `conversion.go` e `import.go`.
 - **Quero as outras versões**: `clock.go` primeiro (o relógio

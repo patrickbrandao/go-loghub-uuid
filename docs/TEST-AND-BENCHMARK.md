@@ -126,8 +126,8 @@ go tool cover -html=cover.out            # abre o relatório no navegador
 O CI publica o relatório (`cover.out` e `cover.html`) como artefato
 `cobertura` do job `test` e falha se o total ficar abaixo de 95%. Os
 ramos que ficam de fora por decisão, e não por esquecimento: as falhas
-de leitura de `crypto/rand` (`strongSeed`, `fillRandom` e os `recover`
-de `NewRandom` e `NewV7`), inalcançáveis a partir do Go 1.24. O restante
+de leitura de `crypto/rand` (`fillRandom` e os `recover` de `NewRandom`
+e `NewV7`), inalcançáveis a partir do Go 1.24. O restante
 não coberto são ramos de erro secundários dos analisadores, já
 exercitados pelo fuzzing.
 

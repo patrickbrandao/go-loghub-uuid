@@ -7,10 +7,18 @@ ter para ser aceita. As regras completas de manutenção estão em
 ## Antes de começar
 
 - Abra uma issue descrevendo o problema ou a proposta antes de um pull
-  request grande. Mudanças de projeto já avaliadas e rejeitadas estão
-  registradas na seção "Decisões" do `CHANGELOG.md`, e as propostas em
-  aberto, no fim do mesmo arquivo; consulte-os para não repetir uma
-  discussão encerrada sem argumento novo.
+  request grande.
+- **Consulte antes a seção 11 do `docs/SPEC.md`**, o registro de decisões
+  firmadas. Ela diz o que já foi avaliado e decidido — fonte de entropia
+  do gerador padrão, ausência de contador monotônico, relógio não
+  injetável, as duplicações deliberadas de código, a permanência em
+  `v0.x` — com o motivo de cada uma e o que justificaria revê-la.
+  Proposta que apenas reconhece um desses padrões, sem trazer argumento
+  novo, será encerrada apontando para lá. Medição própria, caso de uso
+  concreto ou mudança na RFC são argumentos novos; preferência de estilo
+  e "outro pacote faz diferente" não são.
+- O histórico de cada decisão, com data, está na seção "Decisões" do
+  `CHANGELOG.md` da versão correspondente.
 - Problemas de segurança seguem o caminho privado descrito em
   `SECURITY.md`, nunca uma issue pública.
 

@@ -19,7 +19,45 @@ Convenções de cada seção:
 
 ## [Não publicado]
 
-Nada ainda.
+### Documentação
+
+- **Registro de decisões firmadas em `docs/SPEC.md` seção 11.** As
+  decisões tomadas até aqui viviam só no histórico deste arquivo, que é
+  cronológico: uma auditoria que lesse a especificação encontrava o
+  código e o padrão, mas não o motivo de ele ser assim, e reabria a
+  discussão. A seção nova é normativa e organizada por tema (entropia e
+  desempenho, testabilidade, contrato público), com quatro colunas:
+  decisão, data, motivo e **o que justificaria revê-la**. Cobre a fonte
+  de entropia do gerador padrão, a ausência de contador monotônico, a
+  proibição de custo novo no caminho quente, o relógio não injetável, as
+  duas duplicações deliberadas de código, o erro sentinela puro do
+  analisador estrito, a semântica da validação de forma, a recusa de ler
+  interfaces de rede e a permanência em `v0.x`. O último item da seção
+  obriga a registrar ali toda decisão nova, inclusive recusas.
+- **Regra de ordenação promovida a normativa**, em `docs/SPEC.md` seção
+  3.4. A especificação descrevia o layout de bits e a ordenação temporal,
+  mas nunca dizia o que acontece dentro do mesmo instante embutido — o
+  vazio exato que fazia a proposta do contador monotônico voltar. Agora
+  está escrito que o desempate é aleatório, que empates entre gerações
+  consecutivas são o caso comum, que contador é proibido no gerador
+  padrão, e que teste de ordenação em laço apertado mede o relógio do
+  host, não a biblioteca.
+- **Caso de teste obrigatório 9** em `docs/SPEC.md` seção 10: restaurar o
+  estado global de relógio ao fim de cada teste, sem paralelismo, com a
+  suíte verde sob repetição e ordem embaralhada.
+- `CONTRIBUTING.md` e `STARTHERE.md` apontam para o registro de decisões
+  antes de propor mudança de projeto, e dizem o que conta como argumento
+  novo (medição própria, caso de uso concreto, mudança na RFC) e o que
+  não conta (preferência de estilo, "outro pacote faz diferente").
+- `CLAUDE.md`: regra de isolamento do estado global nos testes, com
+  `withIsolatedClockState` e a proibição de `t.Parallel()` nas versões 1,
+  2 e 6; ponteiro para a seção 11 antes de propor mudanças; a nota de
+  ordenação passou a dizer que o contador foi **decidido** contra, com a
+  medição, e não apenas que não existe.
+- Referências corrigidas a símbolos que deixaram de existir na `v0.4.0`:
+  `strongSeed` em `CLAUDE.md` e `docs/TEST-AND-BENCHMARK.md`, e os
+  arquivos `race_enabled_test.go` e `race_disabled_test.go` na árvore do
+  `STARTHERE.md`, que agora lista `clockstate_test.go`.
 
 ---
 
@@ -112,6 +150,19 @@ decididas — entre elas a troca da fonte de entropia do gerador padrão.
   um benchmark curto com `-benchmem`, em matriz com Go 1.22 e a versão
   estável. Semanalmente e sob demanda: suíte completa com os testes de
   massa e 60 segundos de fuzzing em cada analisador.
+- **Isolamento do estado global de relógio entre os testes.** O nó e a
+  sequência de relógio das versões 1, 2 e 6 são globais do pacote, e
+  vários testes os alteravam; `TestNodeIDIsRecoverable` fixava um nó com
+  cara de endereço MAC real e nunca o devolvia. Nada quebrava porque a
+  suíte é sequencial e nenhum teste posterior conferia o nó — uma falha
+  esperando `t.Parallel()` ou um teste novo para aparecer longe da causa.
+  O auxiliar `withIsolatedClockState(t)` guarda o nó e, por `t.Cleanup`,
+  devolve-o e entra em uma sequência inédita; restaurar é seguro por
+  causa do piso de relógio por sequência. Com o nó padrão preservado,
+  ficou possível conferi-lo: `TestDefaultNodeIsMulticast` checa o bit
+  multicast que a RFC 9562 §6.10 pede para nós sorteados. A suíte passa
+  com `-count 3` e com `-shuffle on`. Sem mudança em código de produção.
+  (`tests/clockstate_test.go`, `tests/versions_test.go`)
 - **`AppendTo(dst []byte) []byte`** escreve a forma canônica de 36 bytes
   no fim do buffer do chamador e devolve o slice estendido, sem alocar
   quando há capacidade. É o caminho para serializar grandes volumes:
@@ -526,10 +577,15 @@ Primeira versão publicada.
 ## Propostas em aberto
 
 Nenhuma. As quatro propostas levantadas nas revisões de 2026-08-27 foram
-decididas em 2026-09-11: a troca da fonte de entropia e as três adições
-de API foram feitas (veja a seção "Não publicado"); o gerador monotônico
-e o relógio injetável foram recusados, com os motivos registrados em
-"Decisões" abaixo.
+decididas em 2026-09-11 e publicadas na `v0.4.0`: a troca da fonte de
+entropia e as três adições de API foram feitas; o gerador monotônico e o
+relógio injetável foram recusados.
+
+**O registro canônico de decisões é a seção 11 do
+[docs/SPEC.md](docs/SPEC.md)**, que lista cada uma com o motivo e o que
+justificaria revê-la. Este arquivo guarda o histórico — quando cada
+decisão foi tomada e o que mudou junto —, mas quem for propor ou auditar
+deve ler a especificação primeiro. Decisão nova entra nos dois lugares.
 
 [Não publicado]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.4.0...HEAD
 [v0.4.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.3.0...v0.4.0

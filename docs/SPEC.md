@@ -139,6 +139,37 @@ nanossegundos deve obedecer a regras estritas de robustez:
   `rand_a`.
 - Essa economia é normativa e deve ser travada por testes de contagem.
 
+### 3.4 Ordenação e Desempate (Sem Contador Monotônico)
+
+A garantia de ordenação do UUIDv7 multinível é **exatamente esta, e não
+mais que esta**:
+
+- Se o instante embutido de `B` for estritamente maior que o de `A`,
+  então `B > A` tanto na comparação byte a byte quanto na comparação
+  lexicográfica das strings canônicas.
+- Se `A` e `B` carregarem o **mesmo instante embutido**, a ordem entre
+  eles é **aleatória**, decidida pelos bits de entropia. Não há contador,
+  nem sequência, nem qualquer outro desempate determinístico.
+
+O instante embutido tem a resolução do nível: milissegundo no Nível 1,
+microssegundo no Nível 2, nanossegundo no Nível 3. Como gerar um UUID
+custa dezenas de nanossegundos — menos que o passo do relógio da maioria
+dos hosts —, **empates entre gerações consecutivas são o caso comum**,
+não a exceção: são universais no Nível 1 e frequentes nos demais.
+
+**Regra normativa**: a implementação **NÃO DEVE** introduzir contador
+monotônico, nem os métodos 1 ou 2 da RFC 9562 §6.2, no gerador padrão.
+Ambos exigem estado compartilhado entre threads, e o custo sob
+concorrência inviabiliza o objetivo de desempenho da seção 1. O
+raciocínio completo e a medição estão na seção 11.
+
+**Consequência para testes**: é proibido escrever teste de ordenação que
+gere UUIDs em laço apertado e conte "regressões" contra um limite
+tolerado. Esse teste mede a resolução do relógio do host, não a
+biblioteca, e falha de forma permanente em hosts com relógio de
+microssegundo. Teste a invariante acima fazendo o instante avançar de
+verdade entre as gerações.
+
 ---
 
 ## 4. Especificação das Demais Versões (1, 2, 3, 4, 5, 6 e 8)
@@ -480,3 +511,55 @@ reais:
    - Gerar 1.000.000 de UUIDs divididos entre centenas de threads
      simultâneas sem nenhuma colisão e sem nenhum alerta no detector de
      corridas (*race detector*).
+9. **Isolamento do Estado Global de Relógio**:
+   - Os testes das versões 1, 2 e 6 compartilham nó e sequência de
+     relógio. Todo teste que alterar qualquer um dos dois **DEVE**
+     restaurá-lo ao terminar, e nenhum deles pode rodar em paralelo.
+   - A suíte deve passar com repetição (`-count 3`) e com ordem
+     embaralhada (`-shuffle on`). Sem isso, um teste que fixa o nó faz os
+     seguintes rodarem com um nó que não é o padrão, e a falha aparece
+     longe da causa.
+
+---
+
+## 11. Decisões de Projeto Firmadas (Não Reabrir)
+
+Esta seção existe para **encerrar** discussões, não para abri-las. Cada
+item abaixo foi avaliado, medido quando cabia, e decidido. Uma auditoria
+ou revisão que encontre um destes pontos **não deve abrir tarefa pedindo
+a mudança** apenas por reconhecer o padrão: a decisão já é a resposta.
+
+Reabrir um item exige **argumento novo**, e a coluna "o que justificaria
+rever" diz qual. Preferência documentada, simetria de código ou "o outro
+pacote faz diferente" não são argumento novo.
+
+### 11.1 Entropia e desempenho
+
+| Decisão | Data | Motivo | O que justificaria rever |
+|:---|:---|:---|:---|
+| **A fonte de entropia padrão é o gerador por thread do runtime**, não um pool mantido pela biblioteca nem `crypto/rand`. | 2026-09-11 | O pool custava o par `Get`/`Put`, era esvaziado pelo GC (pagando duas leituras de `crypto/rand` a cada recriação) e descartava itens sob o detector de corrida. A troca mediu -34,7% em paralelo e -5,7% em `GenerateV4`. `crypto/rand` em toda geração custa multiplicado, e existe explicitamente como gerador dedicado. | O runtime da linguagem deixar de oferecer fonte por thread, ou medição mostrando regressão. |
+| **Não há contador monotônico** no gerador padrão nem como construtor opcional. | 2026-09-11 | Protótipo com contador de 16 bits e estado atômico: +8,5% em série e **32 vezes** pior em paralelo (7,40 ns para 233,6 ns em 8 núcleos). Exige ainda decidir layout por nível, política de estouro e conviver com a leitura cega de nível na importação, que leria o contador como tempo. Ver 3.4. | Uma construção que dê ordem estrita **sem** estado compartilhado entre threads. |
+| **O caminho quente não ganha desvio, indireção nem alocação** para acomodar funcionalidade nova. | permanente | Dezenas de nanossegundos por identificador é o objetivo declarado na seção 1. Uma chamada indireta a mais pode impedir a embutição e custar 1 a 2 ns em um caminho de 40 ns. | Medição antes e depois mostrando custo nulo. |
+
+### 11.2 Testabilidade
+
+| Decisão | Data | Motivo | O que justificaria rever |
+|:---|:---|:---|:---|
+| **O relógio não é injetável.** A geração lê o relógio do sistema diretamente. | 2026-09-11 | A motivação original era testar bordas de relógio; isso foi resolvido isolando a decomposição do instante (3.2) em função pura, testada de dentro do pacote. O layout de bits está travado por testes de entropia fixa. Sobrava apenas o vetor dourado de ponta a ponta, que não paga um campo de função no caminho quente. | Necessidade de teste que a função pura de decomposição comprovadamente não cobre. |
+| **A duplicação entre a formatação canônica do caminho quente e a dos serializadores é deliberada.** | permanente | A conversão para texto é caminho quente e não deve pagar uma chamada de função por causa dos serializadores. As duas cópias são pequenas e travadas pelos mesmos testes. | Compilador que comprovadamente embuta a chamada sem custo. |
+
+### 11.3 Contrato público
+
+| Decisão | Data | Motivo | O que justificaria rever |
+|:---|:---|:---|:---|
+| **O analisador estrito devolve o erro sentinela puro**, enquanto o permissivo devolve erros embrulhados e específicos. | v0.3.0 | Código existente compara o erro do analisador estrito por igualdade direta. Embrulhar quebraria esses chamadores sem ganho para eles. | Uma versão maior que aceite quebra de compatibilidade. |
+| **A validação de forma aceita os valores especiais** nulo e máximo, além de variante RFC com versão de 1 a 8. | 2026-09-11 | A RFC 9562 seções 5.9 e 5.10 define os dois como válidos apesar de não carregarem versão nem variante. Predicados separados distinguem os casos. | Mudança na própria RFC. |
+| **A biblioteca não lê interfaces de rede** para obter o nó. | v0.2.0 | Arrastaria a biblioteca de rede para dentro de quem só gera UUIDv7, e expõe a identidade da máquina. O nó sorteado com bit multicast é o caminho recomendado pela RFC 9562 §6.10. Quem quiser um endereço real o lê fora e o entrega. | Nada previsto. |
+| **O versionamento permanece em `v0.x`** até a superfície pública assentar. | 2026-09-11 | A `v0.4.0` mudou o gerador padrão e ampliou a API no mesmo ciclo. Um compromisso de estabilidade só faz sentido depois de uso real. | Uso em produção estabilizado, mais revisão da superfície pública inteira e política de compatibilidade publicada. |
+
+### 11.4 Como registrar uma decisão nova
+
+Toda decisão de projeto — inclusive a recusa de uma proposta — entra
+**nesta seção** e no histórico de mudanças, com a data e o motivo. Uma
+proposta recusada sem registro volta na auditoria seguinte, e o custo de
+reavaliá-la é pago de novo.
