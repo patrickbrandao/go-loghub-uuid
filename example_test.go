@@ -196,3 +196,25 @@ func ExampleRangeAt() {
 	// 01a09076-bdfb-71c8-8000-000000000000
 	// 01a09076-bdfc-71c8-8000-000000000000
 }
+
+// GenerateAt constrói um UUIDv7 para um instante que você informa, em
+// vez do instante atual. É o sentido inverso de Import, e serve para
+// reprocessar histórico preservando a ordenação cronológica da chave.
+//
+// Os bits livres são sorteados: com o gerador padrão, duas chamadas com
+// o mesmo instante devolvem valores diferentes. Aqui a entropia é fixa
+// em zero só para o exemplo ter saída verificável.
+func ExampleGenerateAt() {
+	quando := time.Date(2019, 3, 14, 10, 0, 0, 123_456_789, time.UTC)
+	gen := uuid.NewGeneratorWith(func() uint64 { return 0 })
+
+	u := gen.GenerateAt(uuid.Level3, quando)
+	fmt.Println(u)
+
+	// Os campos de tempo voltam exatos no Nível 3, que grava os três.
+	t := uuid.ImportBinary(u)
+	fmt.Println(t.Seconds, t.Milliseconds, t.Microseconds, t.Nanoseconds)
+	// Output:
+	// 01697ba4-ed7b-71c8-b150-000000000000
+	// 1552557600 123 456 789
+}

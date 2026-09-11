@@ -203,6 +203,12 @@ dado precisa ser convertido na migração.
 - **`IsValid()`**: confere variante e versão em uma chamada. Não existe
   no pacote do Google, onde a verificação equivalente é comparar
   `Version()` e `Variant()` à mão.
+- **`GenerateAt`**: gera um UUIDv7 para um instante que você informa, em
+  vez do instante atual, com os bits livres sorteados. Serve para
+  reprocessar histórico e importar registros antigos preservando a
+  ordenação da chave. Não existe no pacote do Google: lá o único ponto
+  que lê o relógio é interno e sem parâmetro, e a única saída é montar
+  os bytes à mão.
 - **`MinAt`, `MaxAt` e `RangeAt`**: as fronteiras de um instante, para
   consulta por intervalo usando o índice da própria chave primária. Não
   existem no pacote do Google, onde não há caminho nenhum para obter o

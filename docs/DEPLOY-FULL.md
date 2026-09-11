@@ -231,6 +231,105 @@ instant := time.Unix(
 
 ---
 
+## Gerar a partir de um instante conhecido
+
+`Generate` lê o relógio. `GenerateAt` recebe o instante, e é o sentido
+inverso de `Import`: ali se lê o tempo de um identificador, aqui se
+constrói um identificador para um tempo.
+
+```go
+import "time"
+
+quando := time.Date(2019, 3, 14, 10, 0, 0, 0, time.UTC)
+
+u := uuid.GenerateAt(uuid.Level3, quando)       // binário
+s := uuid.GenerateAtString(uuid.Level3, quando) // string canônica
+```
+
+Também existe como método, para a entropia configurada continuar
+valendo:
+
+```go
+gen := uuid.NewCryptoGenerator()
+u := gen.GenerateAt(uuid.Level3, quando)
+```
+
+### É gerador, não construtor determinístico
+
+**Duas chamadas com o mesmo instante devolvem UUIDs diferentes.** Os
+campos de tempo são iguais, os bits livres são sorteados:
+
+```go
+a := uuid.GenerateAt(uuid.Level3, quando)
+b := uuid.GenerateAt(uuid.Level3, quando)
+// a != b, mas uuid.ImportBinary(a) == uuid.ImportBinary(b) nos campos de tempo
+```
+
+Isso é proposital. Um gerador que devolvesse sempre o mesmo valor para o
+mesmo instante colidiria na primeira repetição. Se o que você quer é o
+valor determinístico de um instante, use `MinAt` ou `MaxAt`, da seção
+seguinte.
+
+A unicidade vem inteiramente dos bits livres: 74 no Nível 1, 62 no Nível
+2 e 52 no Nível 3. Gerando pelo relógio isso nunca é uma escolha sua,
+porque o instante avança. Aqui o instante é seu, então vale saber que
+gerar em volume para um **único** instante é o caso em que essa margem
+importa.
+
+### Reprocessar um histórico preservando a ordem
+
+É o caso de uso principal. Ao importar registros antigos, gerar a chave
+com o instante original mantém o índice primário em ordem cronológica,
+como se os registros tivessem sido gravados na época:
+
+```go
+type Antigo struct {
+	CriadoEm time.Time
+	Corpo    string
+}
+
+gen := uuid.NewGenerator()
+
+for _, registro := range historico {
+	id := gen.GenerateAtString(uuid.Level2, registro.CriadoEm)
+	_, err := db.Exec(
+		"INSERT INTO eventos (id, corpo) VALUES ($1, $2)",
+		id, registro.Corpo,
+	)
+	if err != nil {
+		return err
+	}
+}
+```
+
+Depois disso a consulta por intervalo da seção seguinte funciona sobre
+os registros importados, porque a chave carrega o instante de origem.
+Se em vez disso você gerasse com `Generate`, todos os registros antigos
+receberiam o carimbo do momento da importação e a ordenação da chave
+passaria a refletir a ordem de importação, não a do histórico.
+
+Use o **mesmo nível** do resto da tabela. Níveis misturados quebram a
+consulta por intervalo, pelo motivo detalhado na seção seguinte.
+
+### Bordas
+
+- Instante anterior a `1970-01-01T00:00:00Z`: degrada para a própria
+  época, exatamente como `Generate` faz com um relógio atrasado.
+- Instante posterior a `10889-08-02T05:31:50.655999999Z`: satura no
+  último instante representável, porque o campo de milissegundos tem 48
+  bits.
+- Nível desconhecido: tratado como Nível 1, como em `Generate`.
+
+Nenhuma dessas situações devolve erro. Nenhum gerador desta biblioteca
+devolve erro, e `GenerateAt` não abre exceção.
+
+**Só existe para o UUIDv7.** As versões 1, 2 e 6 usam a época
+gregoriana e garantem unicidade por um piso de relógio interno; aceitar
+um instante arbitrário fura essa garantia e permitiria reemitir um
+UUIDv1 já produzido. Para essas versões, gere pelo relógio.
+
+---
+
 ## Consultar por intervalo de tempo
 
 Este é o motivo prático de adotar UUIDv7 como chave primária: o próprio

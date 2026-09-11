@@ -48,14 +48,20 @@ quente) e segura para concorrência pesada, cobrindo todo o padrão
 4. **Inspeção e Extração**:
    - Extração de versão, variante, instante temporal (Unix/Gregorian),
      sequência de relógio, nó de rede, domínio e ID local.
-5. **Fronteiras de Tempo (Consulta por Intervalo)**:
-   - Derivação, a partir de um instante e de um nível, do menor e do
-     maior UUIDv7 que a biblioteca poderia gerar naquele instante, para
-     que uma janela de tempo seja respondida pelo índice da própria chave
-     primária, sem coluna nem índice de carimbo temporal.
+5. **Construção a Partir de um Instante Explícito**:
    - É a operação **inversa** da extração do item 4: ali se lê o tempo de
-     um identificador, aqui se derivam os identificadores que delimitam
-     um tempo.
+     um identificador, aqui se constroem identificadores para um tempo.
+     Toda ela recebe o instante por parâmetro, e nenhuma parte dela é
+     chamada pela geração pelo relógio.
+   - **Fronteiras** (consulta por intervalo): o menor e o maior UUIDv7
+     que a biblioteca poderia gerar naquele instante e naquele nível,
+     para que uma janela de tempo seja respondida pelo índice da própria
+     chave primária, sem coluna nem índice de carimbo temporal.
+   - **Geração por instante**: um UUIDv7 daquele instante com os bits
+     livres sorteados, para reprocessar histórico, semear dados de teste
+     e importar registros antigos preservando a ordenação da chave.
+   - Aplica-se **somente ao UUIDv7**, a única versão com época Unix. As
+     versões 1, 2 e 6 ficam de fora por decisão registrada na seção 11.3.
 6. **Serialização e Integração**:
    - Serialização de texto e JSON como string canônica entre aspas.
    - Suporte a identificadores nulos em banco de dados (`NullUUID`).
@@ -269,6 +275,65 @@ argumentos: `to` anterior a `from` produz um intervalo vazio.
 **Esta funcionalidade não toca o caminho quente.** As fronteiras recebem
 o instante por parâmetro, são funções de pacote separadas e a geração
 nunca as chama. Ver a seção 11.3.
+
+---
+
+### 3.6 Geração a Partir de um Instante Explícito
+
+A biblioteca **DEVE** oferecer a geração de um UUIDv7 para um instante
+informado pelo chamador, no lugar do instante atual. É o que fecha a
+assimetria com a extração da seção 7: sem ela, quem reprocessa um
+histórico, semeia dados de teste ou importa registros antigos
+preservando a ordenação da chave monta os 16 bytes à mão.
+
+**Regra normativa — escopo.** Esta operação vale **apenas para o
+UUIDv7**. As versões 1, 2 e 6 usam a época gregoriana e têm a unicidade
+garantida pelo piso de relógio por sequência da seção 4.2, segundo o qual
+os instantes emitidos com cada sequência são estritamente crescentes
+durante toda a vida do processo. Uma função que aceite um instante
+arbitrário do chamador **fura essa invariante** e pode reemitir um UUIDv1
+já produzido. O UUIDv7 não tem estado compartilhado nem piso, então nada
+se perde ao aceitar o instante.
+
+**Regra normativa — os bits livres são sorteados.** Preenchidos os campos
+de tempo do nível, os bits restantes recebem entropia: 74 no Nível 1, 62
+no Nível 2 e 52 no Nível 3. Duas chamadas com o mesmo instante **DEVEM**
+devolver identificadores diferentes. É um gerador, não um construtor
+determinístico: a forma determinística de um instante já existe na seção
+3.5, e expor uma segunda com o verbo "gerar" convidaria ao pior
+mal-entendido possível, o de usar como identificador único algo que
+colide na primeira repetição de instante.
+
+A entropia **DEVE** vir do mesmo gerador do resto da biblioteca, para
+que uma fonte criptográfica configurada pelo chamador continue valendo
+aqui. O consumo por nível é o mesmo da seção 3.3: uma palavra de 64 bits
+nos níveis 2 e 3, duas no Nível 1 e nos níveis desconhecidos.
+
+**Regra normativa — mesma decomposição das fronteiras.** O instante é
+decomposto pela regra da seção 3.5, com saturação nas duas pontas, e não
+pela decomposição do caminho quente, que só tem piso. Os dois motivos
+são os mesmos: o instante vem por parâmetro e pode estourar a
+multiplicação por mil, e um carimbo que dá a volta destrói a ordenação
+que é a razão de existir do UUIDv7.
+
+**Regra normativa — um só empacotamento.** O empacotamento dos 16 bytes
+**DEVE** existir em um único lugar, compartilhado pelas fronteiras da
+seção 3.5 e pela geração desta seção, parametrizado pelos bits livres:
+constantes em um caso, sorteados no outro. A geração pelo relógio pode
+manter cópia própria, pela regra de custo da seção 11.1, mas as duas
+construções a partir de instante **não** podem divergir uma da outra.
+Duas cópias dessa aritmética divergindo é um defeito que só aparece em
+produção, no nível menos usado.
+
+**Consequência para a unicidade.** Como o instante deixa de vir do
+relógio, nada impede o chamador de gerar em volume para um único
+instante, e aí a margem passa a ser só a dos bits livres. No Nível 3 são
+52 bits, o que põe a probabilidade de colisão na casa de um em dois
+elevado a 26 gerações **para o mesmo nanossegundo**. É folgado na
+prática e **DEVE** estar documentado, porque a geração pelo relógio
+nunca expõe o chamador a essa escolha.
+
+A forma da API, a aridade e a nomenclatura estão na seção 11.3.
 
 ---
 
@@ -544,10 +609,17 @@ de todas as operações desta seção, elas não são métodos de um UUID.
 - **`RangeAt(Level, from, to) (lo, hi)`**: o par de um intervalo
   **semiaberto** `[from, to)`, com `lo = MinAt(nível, from)` e
   `hi = MinAt(nível, to)`, para `id >= lo AND id < hi`.
+- **`GenerateAt(Level, instante) UUID`** e
+  **`GenerateAtString(Level, instante) string`** (seção 3.6): um UUIDv7
+  daquele instante com os bits livres **sorteados**. Duas chamadas com o
+  mesmo instante devolvem valores diferentes. Existem também como
+  métodos do gerador, para que uma fonte de entropia configurada pelo
+  chamador continue valendo.
 
-As três preservam versão e variante, saturam nas duas pontas da faixa
-representável e valem apenas para identificadores gravados no **mesmo
-nível**. As regras normativas estão na seção 3.5.
+As cinco preservam versão e variante, decompõem o instante com saturação
+nas duas pontas da faixa representável e valem apenas para
+identificadores gravados no **mesmo nível**. As regras normativas estão
+nas seções 3.5 e 3.6.
 
 ---
 
@@ -658,6 +730,22 @@ reais:
       devolve o instante de origem, truncado à resolução do nível.
     - Travar o layout com vetores fixos, calculados fora da
       implementação.
+11. **Geração por Instante Explícito (seção 3.6)**:
+    - **Ida e volta com a extração**: gerar para segundos, milissegundos,
+      microssegundos e nanossegundos conhecidos e conferir que a leitura
+      devolve exatamente esses campos, em cada nível que os grava. É o
+      teste central, porque prova a simetria que motiva a operação.
+    - **Não divergência com a geração pelo relógio**: com a mesma fonte
+      de entropia constante, gerar pelo relógio, ler o instante embutido
+      de volta e regerar para ele. Os 16 bytes **devem** ser idênticos. É
+      esta a trava da duplicação deliberada da seção 11.2, e ela falha se
+      as duas cópias do empacotamento se separarem.
+    - **Contenção pelas fronteiras**: o valor gerado para um instante cai
+      sempre dentro das fronteiras daquele instante (seção 3.5).
+    - **Não determinismo**: muitas chamadas com o mesmo instante
+      devolvem valores todos distintos, e com os campos de tempo iguais.
+    - Consumo de entropia por nível igual ao da seção 3.3.
+    - Bordas: pré-1970, saturação acima da faixa e níveis desconhecidos.
 
 ---
 
@@ -686,7 +774,7 @@ pacote faz diferente" não são argumento novo.
 |:---|:---|:---|:---|
 | **O relógio não é injetável.** A geração lê o relógio do sistema diretamente. | 2026-09-11 | A motivação original era testar bordas de relógio; isso foi resolvido isolando a decomposição do instante (3.2) em função pura, testada de dentro do pacote. O layout de bits está travado por testes de entropia fixa. Sobrava apenas o vetor dourado de ponta a ponta, que não paga um campo de função no caminho quente. | Necessidade de teste que a função pura de decomposição comprovadamente não cobre. |
 | **A duplicação entre a formatação canônica do caminho quente e a dos serializadores é deliberada.** | permanente | A conversão para texto é caminho quente e não deve pagar uma chamada de função por causa dos serializadores. As duas cópias são pequenas e travadas pelos mesmos testes. | Compilador que comprovadamente embuta a chamada sem custo. |
-| **A duplicação do layout de bytes entre a geração e a montagem da fronteira (seção 3.5) é deliberada.** | 2026-09-11 | A fronteira repete campo a campo o empacotamento da geração, trocando a entropia por um valor de preenchimento. Fatorar as duas em uma função só poria uma chamada ou um desvio no caminho quente, que a decisão 11.1 proíbe. As duas cópias ficam travadas pelos mesmos vetores fixos, e o comentário da fronteira aponta para a geração como origem do layout, porque é ela que precisa acompanhar. | Compilador que comprovadamente embuta a chamada sem custo, medido antes e depois. |
+| **O layout de bytes é escrito duas vezes, e só duas: uma no caminho quente e uma compartilhada por tudo que constrói a partir de um instante (seções 3.5 e 3.6).** | 2026-09-11 | O empacotamento compartilhado recebe os bits livres por parâmetro: constantes na fronteira, sorteados na geração por instante. Fundi-lo com a geração pelo relógio poria uma chamada ou um desvio no caminho quente, que a decisão 11.1 proíbe. O limite é esse: **uma** cópia privada, no caminho quente, e nenhuma outra duplicação tolerada. A divergência entre as duas é travada por teste, que gera pelo relógio, lê o instante de volta e regera para ele exigindo bytes idênticos. | Compilador que comprovadamente embuta a chamada sem custo, medido antes e depois. |
 
 ### 11.3 Contrato público
 
@@ -696,8 +784,11 @@ pacote faz diferente" não são argumento novo.
 | **A validação de forma aceita os valores especiais** nulo e máximo, além de variante RFC com versão de 1 a 8. | 2026-09-11 | A RFC 9562 seções 5.9 e 5.10 define os dois como válidos apesar de não carregarem versão nem variante. Predicados separados distinguem os casos. | Mudança na própria RFC. |
 | **A biblioteca não lê interfaces de rede** para obter o nó. | v0.2.0 | Arrastaria a biblioteca de rede para dentro de quem só gera UUIDv7, e expõe a identidade da máquina. O nó sorteado com bit multicast é o caminho recomendado pela RFC 9562 §6.10. Quem quiser um endereço real o lê fora e o entrega. | Nada previsto. |
 | **O versionamento permanece em `v0.x`** até a superfície pública assentar. | 2026-09-11 | A `v0.4.0` mudou o gerador padrão e ampliou a API no mesmo ciclo. Um compromisso de estabilidade só faz sentido depois de uso real. | Uso em produção estabilizado, mais revisão da superfície pública inteira e política de compatibilidade publicada. |
-| **As fronteiras de tempo são funções de pacote que recebem o instante — `MinAt`, `MaxAt` e `RangeAt` — e isso não reabre a decisão 11.2.** | 2026-09-11 | O que a 11.2 recusou foi um campo de função de relógio dentro do `Generator`, no caminho quente, como costura de teste. Aqui o instante é parâmetro de funções separadas, a geração nunca as chama e o caminho quente não ganha desvio nem indireção, então a regra da 11.1 continua satisfeita. Sem elas, a consulta por intervalo — o argumento central para adotar UUIDv7 como chave primária — exige que o chamador monte os 16 bytes à mão, e é justamente o cálculo por nível que ele erra. Os nomes `MinAt`/`MaxAt` foram escolhidos sobre `FloorAt`/`CeilAt` e `LowerBound`/`UpperBound`: conversam com o `Max` que já existe em `values.go`, onde `Max` é o maior UUID absoluto e `MaxAt` o maior de um instante. `RangeAt` devolve intervalo **semiaberto**, que é a forma do SQL que motiva a função. | Uma proposta de fazer a geração chamar estas funções, ou de mover o instante para dentro do `Generator`, que aí sim seria a 11.2. |
+| **A construção a partir de um instante — `MinAt`, `MaxAt`, `RangeAt` e `GenerateAt` — recebe o instante por parâmetro, e isso não reabre a decisão 11.2.** | 2026-09-11 | O que a 11.2 recusou foi um campo de função de relógio dentro do `Generator`, no caminho quente, como costura de teste. Aqui o instante é parâmetro de funções separadas, a geração nunca as chama e o caminho quente não ganha desvio nem indireção, então a regra da 11.1 continua satisfeita. Sem elas, a consulta por intervalo — o argumento central para adotar UUIDv7 como chave primária — exige que o chamador monte os 16 bytes à mão, e é justamente o cálculo por nível que ele erra. Os nomes `MinAt`/`MaxAt` foram escolhidos sobre `FloorAt`/`CeilAt` e `LowerBound`/`UpperBound`: conversam com o `Max` que já existe em `values.go`, onde `Max` é o maior UUID absoluto e `MaxAt` o maior de um instante. `RangeAt` devolve intervalo **semiaberto**, que é a forma do SQL que motiva a função. | Uma proposta de fazer a geração chamar estas funções, ou de mover o instante para dentro do `Generator`, que aí sim seria a 11.2. |
 | **As fronteiras saturam nas duas pontas da faixa representável**, inclusive levando `micro` e `nano` a 999 no teto. | 2026-09-11 | Uma fronteira é predicado de consulta: o que a torna correta é nunca regredir quando o instante avança. Truncar os bits excedentes, como o empacotamento por deslocamento faria de graça, deixaria a fronteira dar a volta e a consulta devolveria as linhas erradas em silêncio. Saturar no teto é a escolha simétrica ao piso na época que a seção 3.2 já faz embaixo. Zerar `micro` e `nano` na saturação quebraria a monotonicidade na travessia da borda, e há teste para isso. | Nada previsto: a alternativa é aceitar resposta errada em silêncio. |
+| **A geração por instante explícito (`GenerateAt`, seção 3.6) vale só para o UUIDv7.** As versões 1, 2 e 6 ficam de fora. | 2026-09-11 | Só o UUIDv7 usa época Unix. A unicidade de v1 e v6 vem do piso de relógio por sequência da seção 4.2, e aceitar um instante arbitrário do chamador fura essa invariante: dá para reemitir um UUIDv1 já produzido. É justamente onde a biblioteca se diferencia do pacote do Google, que zera o piso em qualquer troca de sequência. O UUIDv7 não tem estado compartilhado nem piso, então aceitar o instante não custa nada. | Um caso de uso concreto para v1/v6 por instante, com a função recebendo também sequência e nó, e a responsabilidade pela unicidade transferida ao chamador em letras garrafais. |
+| **Os bits livres de `GenerateAt` são sorteados, não zerados.** | 2026-09-11 | O verbo pedido é gerar, e um gerador que devolve o mesmo valor para o mesmo instante colide na primeira repetição. A forma determinística de um instante já existe, e é a seção 3.5: expor uma segunda com nome de gerador convidaria ao mal-entendido mais caro possível. A entropia vem do mesmo gerador do resto da biblioteca, por isso as funções também existem como métodos. | Nada previsto: a alternativa determinística já está coberta por `MinAt`. |
+| **A forma é `GenerateAt(nível, instante)`, e não uma família de quatro aridades.** | 2026-09-11 | A proposta original mapeava a aridade no nível: quatro funções por número de argumentos, cada uma com variante em texto, em função de pacote e em método, somando dezesseis símbolos novos. A forma escolhida usa o mesmo par nível-instante que `Generate(nível)` e `MinAt(nível, instante)` já usam, custa quatro símbolos e deixa uma única maneira de dizer nível na biblioteca inteira. A `v0.x` existe para a superfície assentar, e quadruplicar a superfície de geração do UUIDv7 de uma vez vai na direção oposta. | Uso real mostrando que a forma posicional por campos de tempo é necessária, e não só conveniente. |
 
 ### 11.4 Como registrar uma decisão nova
 

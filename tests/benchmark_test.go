@@ -297,3 +297,26 @@ func BenchmarkRangeAtLevel3(b *testing.B) {
 		sinkU, sinkU = uuid.RangeAt(uuid.Level3, benchInstant, fim)
 	}
 }
+
+// --- geração a partir de instante explícito ---
+
+func BenchmarkGenerateAtLevel1(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = g.GenerateAt(uuid.Level1, benchInstant)
+	}
+}
+
+func BenchmarkGenerateAtLevel3(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = g.GenerateAt(uuid.Level3, benchInstant)
+	}
+}
+
+func BenchmarkGenerateAtStringLevel3(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkS = g.GenerateAtString(uuid.Level3, benchInstant)
+	}
+}

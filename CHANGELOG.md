@@ -21,6 +21,55 @@ Convenções de cada seção:
 
 ### Adicionado
 
+- **`GenerateAt` e `GenerateAtString` em `construct.go`: geração de
+  UUIDv7 para um instante informado pelo chamador.** A biblioteca só
+  sabia ler tempo de dentro de um UUID. `Import` e `ImportBinary`
+  devolvem os quatro campos de tempo, mas não existia o caminho de
+  volta: nenhuma função pública recebia um instante e devolvia um UUID,
+  e os dois pontos que leem o relógio eram internos e sem parâmetro.
+  Quem reprocessa um histórico, semeia dados de teste ou importa
+  registros antigos preservando a ordenação da chave montava os bytes à
+  mão.
+
+  As duas existem como funções de pacote e como métodos de `*Generator`,
+  seguindo o par `Generate`/`GenerateString`. A forma de método importa
+  porque os bits livres são sorteados: quem configurou
+  `NewCryptoGenerator` ou `NewGeneratorWith` continua valendo aqui. O
+  consumo de entropia por nível é o mesmo de `Generate`, uma palavra de
+  64 bits nos níveis 2 e 3 e duas no Nível 1, travado por teste.
+
+  **É gerador, não construtor determinístico.** Duas chamadas com o
+  mesmo instante devolvem UUIDs diferentes, com os mesmos campos de
+  tempo. A forma determinística de um instante é `MinAt`/`MaxAt`. A
+  unicidade vem inteiramente dos bits livres, 74 no Nível 1, 62 no Nível
+  2 e 52 no Nível 3; gerando pelo relógio isso nunca é escolha do
+  chamador, porque o instante avança, e aqui passa a ser.
+
+  Bordas idênticas às das fronteiras: instante anterior à época degrada
+  para a própria época, como em `Generate`; instante posterior a
+  `10889-08-02T05:31:50.655999999Z` satura no último representável;
+  nível desconhecido vira Nível 1. Nada disso devolve erro, porque
+  nenhum gerador desta biblioteca devolve erro.
+
+  Zero alocações na forma binária e uma na forma em texto, travadas em
+  `tests/alloc_test.go`. Sai mais barata que `Generate` por não pagar a
+  leitura do relógio: cerca de 11 ns no Nível 3 contra cerca de 40 ns.
+
+- **O empacotamento dos 16 bytes passou a existir em um lugar só**, na
+  função interna `packV7` de `construct.go`, parametrizada pelos bits
+  livres: `MinAt` passa zeros, `MaxAt` passa uns e `GenerateAt` passa
+  bits sorteados. A decomposição do instante com saturação nas duas
+  pontas virou `saturatedInstant`, no mesmo arquivo, e `bounds.go` ficou
+  com as três funções públicas e três linhas de cola. Duas cópias dessa
+  aritmética divergindo é um defeito que só apareceria em produção, no
+  nível menos usado.
+
+  `Generate` mantém a sua própria cópia do empacotamento, de propósito,
+  porque compartilhar poria uma chamada no caminho quente. Essa é a
+  única cópia tolerada, e `TestGenerateAtMatchesGenerateLayout` trava a
+  divergência: gera pelo relógio com entropia constante, lê o instante
+  embutido de volta, regera para ele e exige os 16 bytes idênticos.
+
 - **`MinAt`, `MaxAt` e `RangeAt` em `bounds.go`: as fronteiras de tempo
   de um instante, para consulta por intervalo.** O argumento central
   para adotar UUIDv7 como chave primária é responder a uma janela de
@@ -136,10 +185,11 @@ Convenções de cada seção:
 - **`docs/SPEC.md` atualizado em seis pontos**, para que a
   especificação continue bastando por si só para reimplementar a
   biblioteca do zero:
-  - **Seção 1** (escopo) ganhou o item 5, "Fronteiras de Tempo", que é a
-    operação inversa da extração do item 4: ali se lê o tempo de um
-    identificador, aqui se derivam os identificadores que delimitam um
-    tempo. "Serialização e Integração" passou de item 5 para 6.
+  - **Seção 1** (escopo) ganhou o item 5, "Construção a Partir de um
+    Instante Explícito", que é a operação inversa da extração do item 4:
+    ali se lê o tempo de um identificador, aqui se constroem
+    identificadores para um tempo. Cobre as fronteiras e a geração por
+    instante. "Serialização e Integração" passou de item 5 para 6.
   - **Seção 3.5**, nova, com o cálculo normativo por nível, a tabela de
     preenchimento dos bits livres, as regras de precisão, de níveis que
     não compõem, de saturação nas duas pontas e do intervalo semiaberto.
@@ -158,6 +208,34 @@ Convenções de cada seção:
 - Dois exemplos executáveis novos em `example_test.go`, `ExampleMinAt` e
   `ExampleRangeAt`. Como as fronteiras recebem o instante por parâmetro,
   eles têm saída verificável sem depender do relógio.
+- **`docs/DEPLOY-FULL.md` ganhou a seção "Gerar a partir de um instante
+  conhecido"**, logo depois da importação, porque é o sentido inverso
+  dela. Traz o exemplo de reprocessar um histórico preservando a ordem
+  da chave, o aviso de que a função é geradora e não determinística, e a
+  explicação de por que gerar com `Generate` na importação faria a chave
+  refletir a ordem de importação em vez da do histórico.
+- **`docs/SPEC.md` atualizado em mais seis pontos** pela geração por
+  instante:
+  - **Seção 1** teve o item 5 reescrito para cobrir as duas operações de
+    construção a partir de um instante, e não só as fronteiras.
+  - **Seção 3.6**, nova, com as cinco regras normativas: escopo restrito
+    ao UUIDv7, bits livres sorteados, entropia vinda do gerador do
+    chamador, mesma decomposição com saturação das fronteiras e um só
+    empacotamento compartilhado.
+  - **Seção 7** passou a listar `GenerateAt` e `GenerateAtString`.
+  - **Seção 10** ganhou o caso de teste obrigatório 11, com a trava de
+    não divergência entre as duas cópias do empacotamento.
+  - **Seção 11.2** teve a linha da duplicação reescrita: o limite passou
+    a ser explícito, uma cópia privada no caminho quente e nenhuma outra.
+  - **Seção 11.3** ganhou as três decisões desta rodada.
+- `STARTHERE.md` lista `construct.go` na árvore e as cinco funções de
+  construção por instante; `docs/MIGRATION.md` seção 5 registra que o
+  pacote do Google não tem equivalente, porque lá o único ponto que lê o
+  relógio é interno e sem parâmetro; `docs/TEST-AND-BENCHMARK.md` lista
+  os três benchmarks novos; `CLAUDE.md` descreve `construct.go` e corrige
+  a nota de sincronia do layout, que agora aponta para `packV7`.
+- `ExampleGenerateAt` em `example_test.go`, com entropia fixa para ter
+  saída verificável, mostrando a ida e volta com `ImportBinary`.
 
 ### Decisões
 
@@ -176,24 +254,49 @@ Convenções de cada seção:
 - **`RangeAt` devolve intervalo semiaberto**, não fechado, porque
   `id >= lo AND id < hi` é a forma da consulta que motiva a função. Para
   o intervalo fechado, `MinAt` e `MaxAt` continuam disponíveis.
-- **A duplicação do layout de bytes entre `Generate` e `boundAt` é
-  deliberada**, e está registrada em `docs/SPEC.md` seção 11.2 ao lado da
-  duplicação já existente entre a formatação canônica do caminho quente e
-  a dos serializadores. A fronteira repete campo a campo o empacotamento
-  da geração, trocando a entropia por um valor de preenchimento. Fatorar
-  as duas em uma função só poria uma chamada ou um desvio no caminho
-  quente, que a decisão 11.1 proíbe. Sem esse registro, a próxima
-  auditoria abriria um achado de DRY contra `boundAt`. `CLAUDE.md` passou
-  a listar três invariantes de duplicação deliberada, não duas, e a
-  avisar que `Generate` não tem ponteiro de volta: quem mudar o layout lá
-  precisa seguir até `bounds.go` à mão, e são os vetores fixos de
-  `tests/bounds_test.go` que pegam o esquecimento.
+- **O layout de bytes é escrito duas vezes, e só duas**, registrado em
+  `docs/SPEC.md` seção 11.2 ao lado da duplicação já existente entre a
+  formatação canônica do caminho quente e a dos serializadores. Uma
+  cópia é privada de `Generate`, no caminho quente; a outra é `packV7`,
+  compartilhada por tudo que constrói a partir de um instante. Fundir as
+  duas poria uma chamada ou um desvio no caminho quente, que a decisão
+  11.1 proíbe. Sem esse registro, a próxima auditoria abriria um achado
+  de DRY contra `packV7`. `CLAUDE.md` passou a listar três invariantes de
+  duplicação deliberada, não duas, e a avisar que `Generate` não tem
+  ponteiro de volta: quem mudar o layout lá precisa seguir até
+  `construct.go` à mão, e é `TestGenerateAtMatchesGenerateLayout` que
+  pega o esquecimento.
 - **Saturar em vez de truncar** acima da faixa representável. Truncar os
   bits excedentes sairia de graça do empacotamento por deslocamento e
   concordaria com `Generate`, mas uma fronteira é predicado de consulta:
   o que a torna correta é nunca regredir quando o instante avança. Uma
   fronteira que dá a volta devolve as linhas erradas em silêncio.
   Registrado na seção 11.3.
+- **`GenerateAt` vale só para o UUIDv7.** Estender para as versões 1, 2
+  e 6 foi recusado: elas usam a época gregoriana e têm a unicidade
+  garantida pelo piso de relógio por sequência, segundo o qual os
+  instantes emitidos com cada sequência são estritamente crescentes
+  durante toda a vida do processo. Aceitar um instante arbitrário do
+  chamador fura essa invariante e permite reemitir um UUIDv1 já
+  produzido. É justamente o ponto em que a biblioteca se diferencia do
+  pacote do Google, que zera o piso em qualquer troca de sequência.
+  Reabrir exige receber sequência e nó explicitamente e transferir a
+  responsabilidade pela unicidade ao chamador. Registrado na seção 11.3.
+- **Os bits livres de `GenerateAt` são sorteados, não zerados.** A
+  alternativa determinística foi recusada porque já existe, e se chama
+  `MinAt`. Expor uma segunda forma determinística com o verbo "gerar"
+  convidaria ao mal-entendido mais caro da API, o de usar como
+  identificador único algo que colide na primeira repetição de instante.
+  Registrado na seção 11.3.
+- **A forma é `GenerateAt(nível, instante)`, e não uma família de quatro
+  aridades.** A proposta original mapeava o número de argumentos no
+  nível, somando dezesseis símbolos novos entre funções de pacote,
+  variantes em texto e métodos. A forma escolhida reusa o par
+  nível-instante que `Generate(nível)` e `MinAt(nível, instante)` já
+  usam, custa quatro símbolos e deixa uma única maneira de dizer nível na
+  biblioteca inteira. A `v0.x` existe para a superfície assentar, e
+  quadruplicar a superfície de geração do UUIDv7 de uma vez ia na direção
+  contrária. Registrado na seção 11.3.
 
 ---
 

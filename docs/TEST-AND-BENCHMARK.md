@@ -220,6 +220,9 @@ Mede nanossegundos por operação e alocações:
   `BenchmarkRangeAtLevel3` — fronteiras de tempo para consulta por
   intervalo. Medem sobre um instante fixo, para não somar a leitura do
   relógio ao resultado.
+- `BenchmarkGenerateAtLevel1/3` e `BenchmarkGenerateAtStringLevel3` —
+  geração a partir de instante explícito. Saem mais baratas que
+  `BenchmarkGenerateLevel1/3` porque não pagam a leitura do relógio.
 
 Os números de referência de todos eles estão na seção 4.
 

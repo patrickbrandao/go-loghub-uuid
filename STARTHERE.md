@@ -42,6 +42,7 @@ go-loghub-uuid/
 ├── version8.go             # GenerateV8
 │
 │   # PRODUÇÃO — API de apoio
+├── construct.go            # GenerateAt: UUIDv7 de um instante informado, e o empacotamento compartilhado
 ├── bounds.go               # MinAt, MaxAt e RangeAt: fronteiras para consulta por intervalo
 ├── parse.go                # Parse permissivo, Validate, FromBytes, MustParse
 ├── values.go               # Nil, Max, Compare, URN, Bytes, IsValid, UUIDs
@@ -143,7 +144,11 @@ próprias.
 - `Import(string) (Time, error)`
 - `ImportBinary(UUID) Time`
 
-**Fronteiras de tempo (consulta por intervalo)**
+**Construção a partir de um instante**
+- `GenerateAt(Level, time.Time) UUID` — um UUIDv7 daquele instante, com
+  os bits livres **sorteados**. Também como
+  `(*Generator) GenerateAt`, para valer a entropia configurada.
+- `GenerateAtString(Level, time.Time) string` — o mesmo, em texto.
 - `MinAt(Level, time.Time) UUID` — o menor UUIDv7 gerável naquele
   instante e naquele nível; bits livres de entropia em zero.
 - `MaxAt(Level, time.Time) UUID` — o maior; bits livres em um.
@@ -151,10 +156,14 @@ próprias.
   intervalo **semiaberto** `[from, to)`, pronto para
   `WHERE id >= lo AND id < hi`.
 
-> As três preservam versão 7 e variante RFC, e por isso delimitam de
-> fato os identificadores gravados. A fronteira só vale para UUIDs do
-> **mesmo nível**: os bits abaixo do milissegundo significam coisas
-> diferentes em cada um. Ver [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md).
+> `GenerateAt` é gerador: duas chamadas com o mesmo instante devolvem
+> valores diferentes. `MinAt` e `MaxAt` são determinísticas e servem de
+> fronteira, não de identificador.
+>
+> Todas preservam versão 7 e variante RFC. A fronteira só vale para
+> UUIDs do **mesmo nível**: os bits abaixo do milissegundo significam
+> coisas diferentes em cada um. Ver
+> [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md).
 
 ### 3.2 Demais versões de UUID
 

@@ -146,3 +146,26 @@ func TestBoundsZeroAllocations(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerateAtZeroAllocations trava a mesma propriedade de Generate na
+// geração por instante explícito: zero alocações na forma binária e no
+// máximo uma, a string final, na forma em texto.
+func TestGenerateAtZeroAllocations(t *testing.T) {
+	g := uuid.NewGenerator()
+	instante := time.Now()
+	for _, level := range []uuid.Level{uuid.Level1, uuid.Level2, uuid.Level3} {
+		allocs := testing.AllocsPerRun(1_000, func() {
+			sinkU = g.GenerateAt(level, instante)
+		})
+		if allocs != 0 {
+			t.Errorf("GenerateAt(nível %d): %.0f alocações por chamada, esperado 0", level, allocs)
+		}
+
+		allocs = testing.AllocsPerRun(1_000, func() {
+			sinkS = g.GenerateAtString(level, instante)
+		})
+		if allocs > 1 {
+			t.Errorf("GenerateAtString(nível %d): %.0f alocações por chamada, esperado no máximo 1", level, allocs)
+		}
+	}
+}
