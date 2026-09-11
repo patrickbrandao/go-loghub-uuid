@@ -673,7 +673,84 @@ _, err = db.Exec("INSERT INTO registros (id, nome) VALUES ($1, $2)", r.ID, r.Nom
 `Scan` aceita `NULL`, texto em qualquer formato reconhecido por `Parse` e
 16 bytes crus. Texto vazio (string ou bytes) equivale a `NULL`: grava o
 UUID nulo sem erro e, em `NullUUID`, deixa `Valid` falso. `Value` grava a
-string canônica; para coluna binária, passe `r.ID[:]` explicitamente.
+string canônica.
+
+### Coluna binária de 16 bytes
+
+A integração padrão é assimétrica de propósito: a leitura já aceita as
+duas formas, mas a escrita é sempre texto. `Value` não vai mudar, porque
+uma coluna que já recebeu texto e passasse a receber binário ficaria com
+dois formatos misturados e nenhuma consulta acharia as linhas antigas.
+
+Para gravar binário, converta para `BinaryUUID` no ponto da consulta:
+
+```go
+_, err := db.Exec(
+	"INSERT INTO eventos (id, corpo) VALUES (?, ?)",
+	uuid.BinaryUUID(r.ID), corpo,
+)
+```
+
+E `NullBinaryUUID` para a coluna que também aceita `NULL`:
+
+```go
+pai := uuid.NullBinaryUUID{UUID: chaveDoPai, Valid: temPai}
+_, err := db.Exec("INSERT INTO eventos (id, pai) VALUES (?, ?)", uuid.BinaryUUID(r.ID), pai)
+```
+
+A leitura não muda: os dois tipos delegam ao `Scan` de `UUID` e
+continuam aceitando texto e binário. O tipo existe para a escrita.
+
+Vale a pena onde não há tipo nativo de UUID. Trinta e seis bytes de
+texto contra dezesseis de binário é mais que o dobro por linha,
+replicado em todo índice secundário que referencie a chave:
+
+```sql
+-- MySQL / MariaDB
+CREATE TABLE eventos (
+  id    BINARY(16) NOT NULL PRIMARY KEY,
+  pai   BINARY(16) NULL,
+  corpo TEXT
+);
+
+-- SQLite
+CREATE TABLE eventos (
+  id    BLOB NOT NULL PRIMARY KEY,
+  pai   BLOB NULL,
+  corpo TEXT
+);
+
+-- PostgreSQL: o tipo e nativo, o driver converte o texto e nao ha ganho
+CREATE TABLE eventos (
+  id    uuid NOT NULL PRIMARY KEY,
+  pai   uuid NULL,
+  corpo text
+);
+```
+
+> **A armadilha.** Ausência de valor e UUID nulo são coisas diferentes e
+> viram a mesma linha se você confundir. `NullBinaryUUID` com `Valid`
+> falso grava `NULL`; para gravar dezesseis bytes zerados é preciso
+> `Valid` verdadeiro com o UUID igual a `Nil`. Uma coluna que misture os
+> dois casos não consegue mais distinguir "não havia valor" de "o valor
+> era o UUID nulo".
+
+> **Não rotacione os bytes.** A ordem é a de rede, a mesma de
+> `MarshalBinary`. Algumas receitas de MySQL sugerem rotacionar os campos
+> do UUIDv1 para melhorar a localidade do índice. É desnecessário no
+> UUIDv7, que já nasce ordenado, e produziria um valor que nenhuma outra
+> ferramenta lê.
+
+A consulta por intervalo funciona igual na coluna binária, com as
+fronteiras convertidas do mesmo jeito:
+
+```go
+lo, hi := uuid.RangeAt(uuid.Level2, inicio, fim)
+rows, err := db.Query(
+	"SELECT id, corpo FROM eventos WHERE id >= ? AND id < ? ORDER BY id",
+	uuid.BinaryUUID(lo), uuid.BinaryUUID(hi),
+)
+```
 
 ## Quando usar cada nível
 

@@ -203,6 +203,11 @@ dado precisa ser convertido na migração.
 - **`IsValid()`**: confere variante e versão em uma chamada. Não existe
   no pacote do Google, onde a verificação equivalente é comparar
   `Version()` e `Variant()` à mão.
+- **`BinaryUUID` e `NullBinaryUUID`**: gravam o UUID como 16 bytes crus
+  em coluna `BINARY(16)` ou `BLOB`, pela conversão no ponto da consulta.
+  O pacote do Google também só grava texto, e lá a única saída é passar
+  `u[:]` na consulta, o que derrota o propósito de implementar
+  `driver.Valuer`. Aqui e lá a leitura já aceita as duas formas.
 - **`GenerateAt`**: gera um UUIDv7 para um instante que você informa, em
   vez do instante atual, com os bits livres sorteados. Serve para
   reprocessar histórico e importar registros antigos preservando a

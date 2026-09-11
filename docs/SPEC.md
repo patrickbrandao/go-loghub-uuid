@@ -630,10 +630,26 @@ nas seções 3.5 e 3.6.
      canônica entre aspas** (`"0192f7c5-1a2b-7c3d-8e4f-aabbccddeeff"`).
    - **NUNCA** serialize como um vetor/array de 16 números inteiros.
 2. **Integração com Banco de Dados**:
-   - Suporte a leitura e escrita de UUIDs como string canônica ou binário
-     de 16 bytes.
+   - A **leitura DEVE aceitar as duas formas**: string canônica em
+     qualquer formato aceito pelo analisador permissivo, e 16 bytes
+     crus. Texto vazio e fatia vazia equivalem a ausência de valor, sem
+     erro.
+   - A **escrita padrão DEVE ser a string canônica**, e esse formato é
+     estável: trocá-lo deixaria duas representações na mesma coluna e as
+     linhas antigas parariam de casar com as consultas.
+   - A escrita binária **DEVE existir como tipo distinto**, escolhido por
+     conversão no ponto da consulta, e nunca por configuração global. Ela
+     entrega os 16 bytes em ordem de rede, sem rotacionar campos: a
+     rotação que algumas receitas sugerem para o UUIDv1 é desnecessária
+     no UUIDv7, que já nasce ordenado, e produziria um valor ilegível
+     para outras ferramentas.
    - Fornecer um tipo `NullUUID` contendo o UUID e um booleano `Valid`
-     para campos de tabela que permitem valor `NULL`.
+     para campos de tabela que permitem valor `NULL`, e o equivalente
+     para a escrita binária.
+   - **Ausência de valor e UUID nulo são valores distintos** e **NÃO
+     DEVEM** colapsar um no outro. Com o booleano falso a escrita produz
+     `NULL`; dezesseis bytes zerados só saem com o booleano verdadeiro e
+     o UUID igual a `Nil`.
 3. **Valores Especiais**:
    - `Nil`: todos os 16 bytes em zero (`00000000-0000-0000-0000-000000000000`).
    - `Max`: todos os 16 bytes em `0xFF` (`ffffffff-ffff-ffff-ffff-ffffffffffff`).
@@ -868,6 +884,7 @@ pacote faz diferente" não são argumento novo.
 | **Os bits livres de `GenerateAt` são sorteados, não zerados.** | 2026-09-11 | O verbo pedido é gerar, e um gerador que devolve o mesmo valor para o mesmo instante colide na primeira repetição. A forma determinística de um instante já existe, e é a seção 3.5: expor uma segunda com nome de gerador convidaria ao mal-entendido mais caro possível. A entropia vem do mesmo gerador do resto da biblioteca, por isso as funções também existem como métodos. | Nada previsto: a alternativa determinística já está coberta por `MinAt`. |
 | **A forma é `GenerateAt(nível, instante)`, e não uma família de quatro aridades.** | 2026-09-11 | A proposta original mapeava a aridade no nível: quatro funções por número de argumentos, cada uma com variante em texto, em função de pacote e em método, somando dezesseis símbolos novos. A forma escolhida usa o mesmo par nível-instante que `Generate(nível)` e `MinAt(nível, instante)` já usam, custa quatro símbolos e deixa uma única maneira de dizer nível na biblioteca inteira. A `v0.x` existe para a superfície assentar, e quadruplicar a superfície de geração do UUIDv7 de uma vez vai na direção oposta. | Uso real mostrando que a forma posicional por campos de tempo é necessária, e não só conveniente. |
 | **A lista de UUIDs não implementa a interface de ordenação da linguagem.** | 2026-09-11 | A biblioteca padrão do Go ordena com uma função de comparação desde a 1.21, e o `go.mod` já está em 1.22: `slices.SortFunc(lista, UUID.Compare)` resolve em uma linha, sem alocação, reusando o `Compare` que já existe e já é testado. Implementar a interface acrescentaria três métodos exportados para oferecer um caminho mais verboso e mais lento que o que o chamador já tem. A pergunta não é se seria útil, é se seria mais útil que a linha que ele já pode escrever. O que faltava era documentação, não API, e ela foi acrescentada. | Uma interface de terceiros que exija a interface de ordenação clássica e não aceite função de comparação. |
+| **A escrita em banco continua sendo texto por padrão, e a forma binária é um tipo à parte.** | 2026-09-11 | Trocar o formato de `Value` quebraria em silêncio quem já tem texto gravado: a mesma coluna passaria a ter duas representações e nenhuma consulta acharia as linhas antigas. Tornar o formato configurável é pior ainda, porque estado global mudaria o comportamento de bibliotecas de terceiros no mesmo processo, e é exatamente o que a recusa de importar `SetRand` já rejeitou. O tipo à parte deixa a escolha explícita no ponto da consulta, sem efeito sobre quem não usa. A leitura sempre aceitou as duas formas e continua aceitando. | Nada previsto: unificar os dois caminhos é a quebra que a decisão evita. |
 
 ### 11.4 Como registrar uma decisão nova
 

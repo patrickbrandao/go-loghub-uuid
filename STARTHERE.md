@@ -210,6 +210,15 @@ própria, independente do caminho do UUIDv7.
 - `(*UUID) Scan(any) error`, `(UUID) Value() (driver.Value, error)`
 - `NullUUID` — coluna que aceita `NULL`, com `Scan`, `Value` e as
   serializações em JSON, texto e binário.
+- `BinaryUUID` — mesmo UUID, gravado como 16 bytes crus em vez da string
+  canônica. Para `BINARY(16)` e `BLOB`, onde não há tipo nativo de UUID.
+  A conversão é no ponto da consulta: `uuid.BinaryUUID(u)`.
+- `NullBinaryUUID` — o mesmo, para coluna que também aceita `NULL`.
+
+> `Value` de `UUID` continua gravando texto e não vai mudar: misturar os
+> dois formatos na mesma coluna faria as linhas antigas sumirem das
+> consultas. Cuidado ainda com a distinção entre coluna nula e UUID
+> nulo, que viram a mesma linha se forem confundidos.
 
 > **Mudança de formato de dados.** Com `MarshalText` presente, o
 > `encoding/json` passa a gravar um UUID como string canônica. Antes ele

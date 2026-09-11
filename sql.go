@@ -80,8 +80,11 @@ func isAbsentScanValue(src any) bool {
 // Value entrega o UUID ao banco de dados como a string canônica,
 // implementando driver.Valuer.
 //
-// Para gravar em coluna binária de 16 bytes, passe o valor fatiado pelo
-// chamador em vez de confiar nesta conversão.
+// O texto é o formato gravado desde a primeira versão e não vai mudar:
+// uma coluna que já recebeu texto e passasse a receber binário ficaria
+// com dois formatos misturados, e nenhuma consulta acharia as linhas
+// antigas. Para gravar em coluna binária de 16 bytes, converta para
+// BinaryUUID no ponto da consulta.
 func (u UUID) Value() (driver.Value, error) {
 	return u.String(), nil
 }
@@ -209,4 +212,92 @@ func (n *NullUUID) UnmarshalBinary(data []byte) error {
 	}
 	n.Valid = true
 	return nil
+}
+
+// --- gravação em coluna binária de 16 bytes ---
+
+// BinaryUUID é um UUID que se entrega ao banco de dados como 16 bytes
+// crus, em ordem de rede, em vez da string canônica de 36 caracteres.
+//
+// Existe porque a integração padrão é assimétrica de propósito: Scan já
+// aceita 16 bytes crus na leitura, mas Value sempre escreve texto, e
+// mudar Value quebraria em silêncio quem já tem texto gravado — dados
+// novos deixariam de casar com os antigos na mesma coluna.
+//
+// Use quando a coluna for BINARY(16) ou BLOB, o que é o habitual em
+// MySQL, MariaDB e SQLite, onde não existe tipo nativo de UUID e a forma
+// binária economiza mais da metade do espaço por linha, replicado em
+// todo índice secundário que referencie a chave. No PostgreSQL o tipo
+// uuid é nativo e o driver converte o texto, então não há ganho.
+//
+// A escolha é por conversão no ponto da consulta, sem estado global e
+// sem efeito sobre quem não usa:
+//
+//	_, err := db.Exec(
+//	    "INSERT INTO eventos (id, corpo) VALUES (?, ?)",
+//	    loghubuuid.BinaryUUID(u), corpo,
+//	)
+//
+// A ordem dos bytes é a de rede, a mesma de MarshalBinary. Algumas
+// receitas de MySQL sugerem rotacionar os campos do UUIDv1 para melhorar
+// a localidade do índice; não faça isso aqui. O UUIDv7 já nasce
+// ordenado, e o valor rotacionado não seria lido por nenhuma outra
+// ferramenta.
+type BinaryUUID UUID
+
+// Value entrega os 16 bytes ao banco, implementando driver.Valuer.
+//
+// Aloca a fatia devolvida, porque driver.Value é uma interface e o
+// driver pode reter o valor depois do retorno. É uma alocação por
+// parâmetro de consulta, não por identificador gerado.
+func (u BinaryUUID) Value() (driver.Value, error) {
+	out := make([]byte, 16)
+	copy(out, u[:])
+	return out, nil
+}
+
+// Scan lê um UUID vindo do banco, implementando sql.Scanner. Delega ao
+// Scan de UUID, portanto aceita as mesmas formas: NULL, texto em
+// qualquer formato de Parse, e 16 bytes crus.
+//
+// Ler por BinaryUUID não exige que a coluna seja binária: o tipo existe
+// para a escrita, e a leitura continua aceitando as duas formas.
+func (u *BinaryUUID) Scan(src any) error {
+	return (*UUID)(u).Scan(src)
+}
+
+// String devolve a forma canônica, como em UUID. Existe para que um
+// BinaryUUID em mensagem de log ou de erro apareça legível, e não como
+// vetor de bytes.
+func (u BinaryUUID) String() string {
+	return UUID(u).String()
+}
+
+// NullBinaryUUID é o equivalente de NullUUID para coluna binária de 16
+// bytes que também aceita NULL.
+//
+// ATENÇÃO — ausência de valor e UUID nulo são coisas diferentes, e
+// confundi-las produz a mesma linha no banco. Com Valid falso, Value
+// devolve NULL; para gravar dezesseis bytes zerados é preciso Valid
+// verdadeiro com UUID igual a Nil. Uma coluna que misture os dois casos
+// não consegue mais distinguir "não havia valor" de "o valor era o UUID
+// nulo".
+type NullBinaryUUID struct {
+	UUID  UUID
+	Valid bool // Valid é falso quando a coluna era NULL
+}
+
+// Scan implementa sql.Scanner. NULL, string vazia e fatia de bytes vazia
+// produzem valor ausente (Valid falso), sem erro, como em NullUUID.
+func (n *NullBinaryUUID) Scan(src any) error {
+	return (*NullUUID)(n).Scan(src)
+}
+
+// Value implementa driver.Valuer: NULL quando não há valor, e os 16
+// bytes crus quando há.
+func (n NullBinaryUUID) Value() (driver.Value, error) {
+	if !n.Valid {
+		return nil, nil
+	}
+	return BinaryUUID(n.UUID).Value()
 }

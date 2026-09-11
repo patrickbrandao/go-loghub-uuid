@@ -21,6 +21,35 @@ Convenções de cada seção:
 
 ### Adicionado
 
+- **`BinaryUUID` e `NullBinaryUUID` em `sql.go`: escrita em coluna
+  binária de 16 bytes.** A integração com `database/sql` era
+  assimétrica: `Scan` já aceitava 16 bytes crus na leitura, mas `Value`
+  sempre escrevia a string canônica. Em MySQL, MariaDB e SQLite, onde
+  não existe tipo nativo de UUID e a coluna costuma ser `BINARY(16)` ou
+  `BLOB` justamente para economizar espaço e acelerar o índice, isso
+  obrigava o chamador a contornar a interface passando `u.Bytes()` na
+  consulta, o que derrota o propósito de implementar `driver.Valuer`.
+  Trinta e seis bytes de texto contra dezesseis é mais que o dobro por
+  linha, replicado em todo índice secundário que referencie a chave.
+
+  A escolha é por conversão no ponto da consulta,
+  `db.Exec(..., loghubuuid.BinaryUUID(u))`, sem estado global e sem
+  efeito sobre quem não usa. O `Scan` dos dois tipos delega ao de `UUID`,
+  então a leitura continua aceitando texto e binário: o tipo existe para
+  a escrita, não para restringir a leitura. `BinaryUUID` também tem
+  `String`, para continuar legível em log e em mensagem de erro.
+
+  **`Value` de `UUID` não mudou e não vai mudar.** Uma coluna que já
+  recebeu texto e passasse a receber binário ficaria com dois formatos
+  misturados, e nenhuma consulta acharia as linhas antigas. O comentário
+  de `Value` passou a dizer isso e a apontar para `BinaryUUID`, em vez
+  do conselho antigo de fatiar o valor à mão.
+
+  **A armadilha está testada explicitamente:** ausência de valor e UUID
+  nulo são coisas diferentes e viram a mesma linha se forem confundidas.
+  `NullBinaryUUID` com `Valid` falso grava `NULL`; dezesseis bytes
+  zerados só saem com `Valid` verdadeiro e o UUID igual a `Nil`.
+
 - **`GenerateAt` e `GenerateAtString` em `construct.go`: geração de
   UUIDv7 para um instante informado pelo chamador.** A biblioteca só
   sabia ler tempo de dentro de um UUID. `Import` e `ImportBinary`
