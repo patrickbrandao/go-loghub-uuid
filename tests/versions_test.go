@@ -409,7 +409,7 @@ func TestTimeBasedClockDrift(t *testing.T) {
 	if !ok {
 		t.Fatal("Timestamp devolveu falso")
 	}
-	drift := embedded.Sub(time.Now())
+	drift := time.Until(embedded)
 
 	// Cada geração consome no máximo um tique de 100 nanossegundos, então
 	// o adiantamento não pode passar do total de tiques da rajada.
@@ -536,7 +536,7 @@ func TestSetClockSequenceRandomIsFresh(t *testing.T) {
 	beforeTime, _ := before.GregorianTime()
 	lastTime, _ := last.GregorianTime()
 	afterTime, _ := after.GregorianTime()
-	if !(beforeTime < lastTime && lastTime < afterTime) {
+	if beforeTime >= lastTime || lastTime >= afterTime {
 		t.Fatalf("instantes da sequência 0x0001 não são estritamente crescentes: %d, %d, %d",
 			beforeTime, lastTime, afterTime)
 	}
@@ -572,5 +572,61 @@ func TestGetTimeSequenceFormat(t *testing.T) {
 	}
 	if seq&0xC000 != 0x8000 {
 		t.Errorf("GetTime: bits de variante %#x, esperado 0x8000", seq&0xC000)
+	}
+}
+
+// TestDomainString confere a descrição em texto dos três domínios da
+// versão 2 e de um valor fora da lista.
+func TestDomainString(t *testing.T) {
+	cases := map[uuid.Domain]string{
+		uuid.Person:     "pessoa",
+		uuid.Group:      "grupo",
+		uuid.Org:        "organizacao",
+		uuid.Domain(7):  "dominio 7",
+		uuid.Domain(42): "dominio 42",
+	}
+	for domain, want := range cases {
+		if got := domain.String(); got != want {
+			t.Errorf("Domain(%d).String() = %q, esperado %q", byte(domain), got, want)
+		}
+	}
+}
+
+// TestInspectorsRejectOtherVersions confere que os leitores de campos das
+// versões baseadas em relógio devolvem falso, ou nulo, para as versões
+// que não carregam aquele campo, e que a versão 2 devolve os 6 bits de
+// sequência que preserva.
+func TestInspectorsRejectOtherVersions(t *testing.T) {
+	others := map[string]uuid.UUID{
+		"v3": uuid.GenerateV3(uuid.NameSpaceDNS, []byte("x")),
+		"v4": uuid.GenerateV4(),
+		"v5": uuid.GenerateV5(uuid.NameSpaceDNS, []byte("x")),
+		"v7": uuid.Generate(uuid.Level1),
+		"v8": uuid.GenerateV8Random(),
+	}
+	for name, u := range others {
+		if _, ok := u.ClockSequence(); ok {
+			t.Errorf("%s: ClockSequence deveria devolver falso", name)
+		}
+		if node := u.NodeID(); node != nil {
+			t.Errorf("%s: NodeID deveria devolver nulo, veio %x", name, node)
+		}
+		if _, ok := u.Domain(); ok {
+			t.Errorf("%s: Domain deveria devolver falso", name)
+		}
+		if _, ok := u.ID(); ok {
+			t.Errorf("%s: ID deveria devolver falso", name)
+		}
+	}
+
+	// A versão 2 preserva só os 6 bits altos da sequência (o byte baixo é
+	// o domínio), e ClockSequence devolve exatamente esses 6 bits.
+	v2 := uuid.GenerateV2(uuid.Org, 4242)
+	seq, ok := v2.ClockSequence()
+	if !ok || seq != int(v2[8]&0x3F) || seq > 63 {
+		t.Errorf("v2: ClockSequence = %d, ok %v, esperado os 6 bits baixos do byte 8 (%d)", seq, ok, v2[8]&0x3F)
+	}
+	if node := v2.NodeID(); len(node) != 6 {
+		t.Errorf("v2: NodeID com %d bytes, esperado 6", len(node))
 	}
 }

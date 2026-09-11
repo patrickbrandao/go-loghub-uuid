@@ -32,7 +32,7 @@ var (
 // sempre devolve o mesmo UUID, em qualquer máquina e a qualquer momento.
 // Prefira a versão 5, que usa SHA-1.
 func GenerateV3(space UUID, name []byte) UUID {
-	return GenerateHash(md5.New(), space, name, 3)
+	return GenerateHash(md5.New(), space, name, 3) //nolint:gosec // exigido pela RFC 9562 para a versão 3
 }
 
 // GenerateV5 produz um UUID de versão 5: os 16 primeiros bytes do resumo
@@ -42,7 +42,7 @@ func GenerateV3(space UUID, name []byte) UUID {
 // A geração é determinística e não usa entropia: o mesmo par espaço e nome
 // sempre devolve o mesmo UUID, em qualquer máquina e a qualquer momento.
 func GenerateV5(space UUID, name []byte) UUID {
-	return GenerateHash(sha1.New(), space, name, 5)
+	return GenerateHash(sha1.New(), space, name, 5) //nolint:gosec // exigido pela RFC 9562 para a versão 5
 }
 
 // GenerateHash produz um UUID baseado em nome com a função de resumo
@@ -53,8 +53,9 @@ func GenerateV5(space UUID, name []byte) UUID {
 // são aproveitados, e a variante RFC é sempre aplicada.
 func GenerateHash(h hash.Hash, space UUID, name []byte, version byte) UUID {
 	h.Reset()
-	h.Write(space[:]) //nolint:errcheck // hash.Hash nunca devolve erro em Write
-	h.Write(name)     //nolint:errcheck // idem
+	// hash.Hash nunca devolve erro em Write; o errcheck já sabe disso.
+	h.Write(space[:])
+	h.Write(name)
 	sum := h.Sum(nil)
 
 	var u UUID

@@ -92,7 +92,7 @@ func NewGenerator() *Generator {
 	pool := &sync.Pool{
 		New: func() any {
 			// Semeia cada PRNG do pool com bytes de crypto/rand.
-			return rand.New(rand.NewPCG(strongSeed(), strongSeed()))
+			return rand.New(rand.NewPCG(strongSeed(), strongSeed())) //nolint:gosec // PRNG estatístico por projeto; ver o aviso acima e NewCryptoGenerator
 		},
 	}
 	return &Generator{

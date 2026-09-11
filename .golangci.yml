@@ -1,0 +1,53 @@
+# Configuração do golangci-lint usada pela integração contínua e pela
+# verificação local (golangci-lint run ./...). Formato da versão 2 da
+# ferramenta.
+#
+# Este é um arquivo de configuração de ferramenta, como o .gitignore, e por
+# isso fica na raiz apesar da regra de raiz mínima; a exceção está
+# registrada em CLAUDE.md e em STARTHERE.md.
+
+version: "2"
+
+run:
+  # Mesma versão mínima declarada em go.mod: o linter não deve sugerir
+  # API mais recente do que a biblioteca promete suportar.
+  go: "1.22"
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck    # erros ignorados
+    - govet       # o mesmo go vet do CI
+    - staticcheck # inclui as verificações antigas de gosimple e stylecheck
+    - unused      # código morto
+    - ineffassign # atribuições sem efeito
+    - gosec       # padrões inseguros (MD5 e SHA-1 têm exceção justificada em namebased.go)
+    - errorlint   # comparação de erros sem errors.Is / errors.As
+    - revive      # comentário de documentação em todo identificador exportado
+    - nolintlint  # marcações //nolint sem linter, sem motivo ou desnecessárias
+    # misspell fica desligado de propósito: só conhece inglês, e os
+    # comentários e as mensagens do projeto são em português.
+  settings:
+    revive:
+      rules:
+        - name: exported
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+    gosec:
+      excludes:
+        # G115 (estouro em conversão de inteiro): a biblioteca empacota
+        # campos em bytes por deslocamento e truncamento deliberados, em
+        # todos os arquivos de geração e leitura; cada conversão é
+        # intencional e o linter não consegue distinguir. O caminho quente
+        # não ganha máscaras só para calar o aviso.
+        - G115
+        # G104 (erro não tratado) duplica o errcheck, que é o linter de
+        # referência para isso e tem as marcações justificadas.
+        - G104
+
+formatters:
+  enable:
+    - gofmt

@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func TestImportKnownVector(t *testing.T) {
 // devolve a estrutura zerada.
 func TestImportInvalidString(t *testing.T) {
 	tm, err := uuid.Import("nao-e-um-uuid")
-	if err != uuid.ErrInvalidFormat {
+	if !errors.Is(err, uuid.ErrInvalidFormat) {
 		t.Fatalf("erro = %v, esperado ErrInvalidFormat", err)
 	}
 	if tm != (uuid.Time{}) {

@@ -1,16 +1,26 @@
 # Integração contínua da biblioteca go-loghub-uuid.
 #
-# Dois fluxos:
+# Três fluxos:
 #
-#   test   — a cada push, pull request e tag: formatação, vet, build e a
-#            suíte em modo -short sob o detector de corrida, na versão
-#            mínima declarada em go.mod e na versão estável mais recente.
-#            Inclui uma medição curta de alocações, para que uma regressão
-#            no caminho quente apareça no log.
+#   test    — a cada push, pull request e tag, em Linux: formatação, vet,
+#             build, compilação cruzada e vet para Windows, macOS e Linux
+#             ARM, linter estático, a suíte em modo -short sob o detector
+#             de corrida, as travas de alocação, um benchmark curto e o
+#             relatório de cobertura, na versão mínima declarada em go.mod
+#             e na versão estável mais recente. Os passos que dependem da
+#             versão da ferramenta (gofmt, linter, cobertura) rodam só na
+#             estável.
 #
-#   deep   — semanalmente e sob demanda: a suíte completa (inclui os
-#            testes de massa de 1.000.000) e campanhas curtas de fuzzing
-#            dos dois analisadores de texto.
+#   test-os — em pull request, tag, agendamento e sob demanda: build, vet
+#             e a suíte em modo -short em Windows e macOS, na versão
+#             estável. Não roda a cada push em main para poupar minutos
+#             dos runners, que custam mais que os de Linux.
+#
+#   deep    — semanalmente e sob demanda: a suíte completa (inclui os
+#             testes de massa de 1.000.000) e campanhas curtas de fuzzing
+#             dos três alvos. Se uma campanha encontrar uma entrada que
+#             quebra o alvo, o corpus gravado pelo Go é publicado como
+#             artefato do job para reprodução local.
 #
 # Nenhum destes passos altera o repositório; o corpus gerado pelo
 # fuzzing só é gravado em caso de falha e fica em tests/testdata/fuzz,
@@ -30,6 +40,13 @@ on:
 
 permissions:
   contents: read
+
+env:
+  MODULE: github.com/patrickbrandao/go-loghub-uuid
+  # Cobertura mínima aceita, em porcentagem de instruções do pacote da
+  # raiz. A medida atual fica bem acima; o limiar existe para acusar uma
+  # queda, não para ser perseguido.
+  COVERAGE_MIN: "95"
 
 jobs:
   test:
@@ -70,6 +87,26 @@ jobs:
       - name: Compilação
         run: go build ./...
 
+      - name: Compilação cruzada e vet (Windows, macOS e Linux ARM)
+        # Pega erro de build e de vet específico de sistema sem gastar um
+        # runner; a execução real em outros sistemas fica no job test-os.
+        run: |
+          for alvo in windows/amd64 darwin/arm64 linux/arm64; do
+            export GOOS="${alvo%/*}" GOARCH="${alvo#*/}"
+            echo "== $GOOS/$GOARCH"
+            go build ./...
+            go vet ./...
+          done
+
+      - name: Linter estático (golangci-lint)
+        # Só na versão estável: a configuração em .golangci.yml já fixa
+        # go 1.22 como alvo de análise, então rodar nas duas versões seria
+        # repetir o mesmo resultado.
+        if: matrix.go == 'stable'
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+
       - name: Testes com detector de corrida (modo -short)
         run: go test ./... -race -short
 
@@ -81,6 +118,66 @@ jobs:
 
       - name: Alocações no caminho quente (benchmark curto)
         run: go test ./tests/ -run '^$' -bench 'BenchmarkGenerateLevel|BenchmarkFromString' -benchmem -benchtime 200000x
+
+      - name: Cobertura de testes
+        # A suíte vive em ./tests/, outro pacote, então -coverpkg é o que
+        # faz o pacote da raiz entrar na conta. Só na versão estável: o
+        # número é o mesmo nas duas.
+        if: matrix.go == 'stable'
+        run: |
+          go test ./tests/ ./ -short -coverpkg="$MODULE" -coverprofile=cover.out
+          go tool cover -func=cover.out
+          go tool cover -html=cover.out -o cover.html
+          total="$(go tool cover -func=cover.out | awk '/^total:/ { sub("%", "", $3); print $3 }')"
+          echo "Cobertura total: ${total}% (mínimo: ${COVERAGE_MIN}%)"
+          if awk -v total="$total" -v minimo="$COVERAGE_MIN" 'BEGIN { exit !(total < minimo) }'; then
+            echo "Cobertura abaixo do mínimo."
+            exit 1
+          fi
+
+      - name: Relatório de cobertura (artefato)
+        if: matrix.go == 'stable'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura
+          path: |
+            cover.out
+            cover.html
+          retention-days: 7
+
+  test-os:
+    name: test (${{ matrix.os }})
+    # Runners de Windows e macOS custam mais minutos que os de Linux, por
+    # isso este job não roda a cada push em main: só em pull request, tag,
+    # agendamento semanal e sob demanda.
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+
+      - name: Versão do Go em uso
+        run: go version
+
+      - name: Análise estática (go vet)
+        run: go vet ./...
+
+      - name: Compilação
+        run: go build ./...
+
+      - name: Testes (modo -short)
+        # Sem -race: no Windows o detector exige CGO e é bem mais lento, e
+        # a corrida já é verificada em Linux. O que interessa aqui é a
+        # resolução do relógio e o comportamento específico do sistema.
+        run: go test ./... -short
 
   deep:
     name: suíte completa e fuzzing
@@ -100,8 +197,50 @@ jobs:
       - name: Suíte completa (inclui massa de 1.000.000) com detector de corrida
         run: go test ./... -race -v -timeout 20m
 
-      - name: Fuzzing do analisador estrito
+      # Os três alvos rodam sempre, mesmo que um falhe (continue-on-error),
+      # para que uma campanha não esconda a falha da seguinte; o passo
+      # final consolida o resultado e falha o job se algum deles falhou.
+
+      - name: Fuzzing do analisador estrito (FuzzFromString)
+        id: fuzz-fromstring
+        continue-on-error: true
         run: go test ./tests/ -run '^$' -fuzz FuzzFromString -fuzztime 60s
 
-      - name: Fuzzing do analisador permissivo
+      - name: Fuzzing do analisador permissivo (FuzzParse)
+        id: fuzz-parse
+        continue-on-error: true
         run: go test ./tests/ -run '^$' -fuzz FuzzParse -fuzztime 60s
+
+      - name: Fuzzing do leitor de JSON de NullUUID (FuzzNullUUIDJSON)
+        id: fuzz-nulluuid
+        continue-on-error: true
+        run: go test ./tests/ -run '^$' -fuzz FuzzNullUUIDJSON -fuzztime 60s
+
+      - name: Corpus das falhas de fuzzing (artefato)
+        # O Go grava a entrada que quebrou o alvo em
+        # tests/testdata/fuzz/<Alvo>/<hash>. Sem este passo ela morre com o
+        # runner. O procedimento de reprodução está em
+        # docs/TEST-AND-BENCHMARK.md.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus
+          path: tests/testdata/fuzz/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Resultado do fuzzing
+        if: always()
+        run: |
+          falhou=0
+          for resultado in \
+            "FuzzFromString=${{ steps.fuzz-fromstring.outcome }}" \
+            "FuzzParse=${{ steps.fuzz-parse.outcome }}" \
+            "FuzzNullUUIDJSON=${{ steps.fuzz-nulluuid.outcome }}"; do
+            echo "$resultado"
+            case "$resultado" in *=failure) falhou=1 ;; esac
+          done
+          if [ "$falhou" -eq 1 ]; then
+            echo "Ao menos uma campanha de fuzzing falhou; baixe o artefato fuzz-corpus."
+            exit 1
+          fi

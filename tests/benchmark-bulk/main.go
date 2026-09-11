@@ -36,7 +36,7 @@ func main() {
 		warmup = 100_000
 	}
 	for i := 0; i < warmup; i++ {
-		bu = gen.Generate(uuid.Level1)
+		_ = gen.Generate(uuid.Level1)
 		bu = gen.Generate(uuid.Level3)
 		bs = gen.GenerateString(uuid.Level3)
 	}

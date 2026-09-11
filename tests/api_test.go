@@ -2,9 +2,11 @@ package tests
 
 import (
 	"bytes"
+	"crypto/sha1" //nolint:gosec // exigido pela RFC 9562 para a versão 5
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"testing"
 
 	uuid "github.com/patrickbrandao/go-loghub-uuid"
@@ -544,5 +546,124 @@ func TestCompatibilityReaders(t *testing.T) {
 	}
 	if _, err := uuid.NewV7FromReader(nil); !errors.Is(err, uuid.ErrEntropySource) {
 		t.Errorf("leitor nulo: erro %v, esperado ErrEntropySource", err)
+	}
+}
+
+// TestNullUUIDTextAndBinary confere as serializações em texto e binário
+// de NullUUID, nos dois estados: com valor e ausente. Entrada vazia
+// produz valor ausente sem erro; entrada inválida devolve erro e deixa
+// Valid falso.
+func TestNullUUIDTextAndBinary(t *testing.T) {
+	reference := uuid.MustParse(canonical)
+	present := uuid.NullUUID{UUID: reference, Valid: true}
+	var absent uuid.NullUUID
+
+	// Texto.
+	if text, err := present.MarshalText(); err != nil || string(text) != canonical {
+		t.Errorf("MarshalText com valor: %q, erro %v", text, err)
+	}
+	if text, err := absent.MarshalText(); err != nil || len(text) != 0 {
+		t.Errorf("MarshalText sem valor: %q, erro %v, esperado vazio", text, err)
+	}
+	var fromText uuid.NullUUID
+	if err := fromText.UnmarshalText([]byte("{" + canonical + "}")); err != nil || fromText != present {
+		t.Errorf("UnmarshalText entre chaves: %+v, erro %v", fromText, err)
+	}
+	if err := fromText.UnmarshalText(nil); err != nil || fromText.Valid || !fromText.UUID.IsZero() {
+		t.Errorf("UnmarshalText vazio: %+v, erro %v, esperado valor ausente", fromText, err)
+	}
+	fromText = present
+	if err := fromText.UnmarshalText([]byte("nao-e-um-uuid")); !errors.Is(err, uuid.ErrInvalidFormat) || fromText.Valid {
+		t.Errorf("UnmarshalText inválido: %+v, erro %v, esperado ErrInvalidFormat com Valid falso", fromText, err)
+	}
+
+	// Binário.
+	if raw, err := present.MarshalBinary(); err != nil || !bytes.Equal(raw, reference[:]) {
+		t.Errorf("MarshalBinary com valor: %x, erro %v", raw, err)
+	}
+	if raw, err := absent.MarshalBinary(); err != nil || len(raw) != 0 {
+		t.Errorf("MarshalBinary sem valor: %x, erro %v, esperado vazio", raw, err)
+	}
+	var fromBinary uuid.NullUUID
+	if err := fromBinary.UnmarshalBinary(reference[:]); err != nil || fromBinary != present {
+		t.Errorf("UnmarshalBinary: %+v, erro %v", fromBinary, err)
+	}
+	if err := fromBinary.UnmarshalBinary([]byte{}); err != nil || fromBinary.Valid || !fromBinary.UUID.IsZero() {
+		t.Errorf("UnmarshalBinary vazio: %+v, erro %v, esperado valor ausente", fromBinary, err)
+	}
+	fromBinary = present
+	if err := fromBinary.UnmarshalBinary(reference[:15]); !uuid.IsInvalidLengthError(err) || fromBinary.Valid {
+		t.Errorf("UnmarshalBinary com 15 bytes: %+v, erro %v, esperado ErrInvalidLength com Valid falso", fromBinary, err)
+	}
+
+	// Value com valor presente grava a string canônica.
+	if value, err := present.Value(); err != nil || value != canonical {
+		t.Errorf("Value com valor: %v, erro %v", value, err)
+	}
+}
+
+// TestMustPropagatesError confere que Must entra em pânico com o próprio
+// erro recebido, e não com uma mensagem nova, para que quem recupera o
+// pânico consiga reconhecê-lo.
+func TestMustPropagatesError(t *testing.T) {
+	defer func() {
+		recovered := recover()
+		err, ok := recovered.(error)
+		if !ok || !errors.Is(err, uuid.ErrInvalidFormat) {
+			t.Errorf("Must entrou em pânico com %v, esperado o erro ErrInvalidFormat", recovered)
+		}
+	}()
+	uuid.Must(uuid.Parse("nao-e-um-uuid"))
+	t.Error("Must deveria ter entrado em pânico")
+}
+
+// TestVariantStringCoversAllCodes confere a descrição de cada um dos
+// quatro códigos de variante e de um código impossível.
+func TestVariantStringCoversAllCodes(t *testing.T) {
+	cases := map[byte]string{
+		0: "reservada para compatibilidade NCS",
+		1: "reservada para compatibilidade NCS",
+		2: "RFC 9562",
+		3: "reservada para a Microsoft ou para uso futuro",
+	}
+	for code, want := range cases {
+		if got := uuid.VariantString(code); got != want {
+			t.Errorf("VariantString(%d) = %q, esperado %q", code, got, want)
+		}
+	}
+	// Variant só devolve 0..3, mas a função aceita qualquer byte.
+	if got := uuid.VariantString(9); got != "variante desconhecida 9" {
+		t.Errorf("VariantString(9) = %q", got)
+	}
+	if got := uuid.VersionString(0); got != "versao desconhecida 0" {
+		t.Errorf("VersionString(0) = %q", got)
+	}
+}
+
+// TestNewHashMatchesGenerateHash confere que o apelido NewHash produz o
+// mesmo valor que GenerateHash, inclusive quando o resumo é menor que 16
+// bytes: os bytes que faltam ficam em zero, e versão e variante são
+// aplicadas mesmo assim.
+func TestNewHashMatchesGenerateHash(t *testing.T) {
+	name := []byte("www.example.com")
+
+	// SHA-1 (20 bytes): o apelido tem que bater com a versão 5 da RFC.
+	if got := uuid.NewHash(sha1.New(), uuid.NameSpaceDNS, name, 5); got != uuid.GenerateV5(uuid.NameSpaceDNS, name) { //nolint:gosec // exigido pela RFC 9562 para a versão 5
+		t.Errorf("NewHash com SHA-1 divergiu de GenerateV5: %s", got)
+	}
+
+	// Resumo curto (8 bytes): só os 8 primeiros bytes vêm do resumo, os
+	// demais ficam zerados; versão e variante continuam corretas.
+	short := uuid.GenerateHash(fnv.New64a(), uuid.NameSpaceDNS, name, 8)
+	if short.Version() != 8 || short.Variant() != 2 {
+		t.Errorf("resumo curto: versão %d variante %d", short.Version(), short.Variant())
+	}
+	for i := 9; i < 16; i++ {
+		if short[i] != 0 {
+			t.Errorf("resumo curto: byte %d = %#02x, esperado zero", i, short[i])
+		}
+	}
+	if got := uuid.NewHash(fnv.New64a(), uuid.NameSpaceDNS, name, 8); got != short {
+		t.Errorf("NewHash com resumo curto divergiu de GenerateHash: %s vs %s", got, short)
 	}
 }

@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ func mustParse(t *testing.T, s string) uuid.UUID {
 // safeFromString executa FromString capturando pânico, para que um
 // defeito de limite de índice apareça como falha de teste e não derrube
 // toda a suíte.
-func safeFromString(s string) (u uuid.UUID, err error, panicked any) {
+func safeFromString(s string) (u uuid.UUID, panicked any, err error) {
 	defer func() { panicked = recover() }()
 	u, err = uuid.FromString(s)
 	return
@@ -45,7 +46,7 @@ func TestFromStringNeverPanics(t *testing.T) {
 			mutated[i] = byte(c)
 			s := string(mutated)
 
-			_, _, panicked := safeFromString(s)
+			_, panicked, _ := safeFromString(s)
 			if panicked != nil {
 				t.Fatalf("FromString entrou em pânico na posição %d com o byte %#x (%q): %v",
 					i, c, s, panicked)
@@ -65,7 +66,7 @@ func TestFromStringExtraHyphen(t *testing.T) {
 		mutated[pos] = '-'
 		s := string(mutated)
 
-		_, err, panicked := safeFromString(s)
+		_, panicked, err := safeFromString(s)
 		if panicked != nil {
 			t.Errorf("hífen extra na posição %d causou pânico: %v", pos, panicked)
 			continue
@@ -84,7 +85,7 @@ func TestFromStringLengthBoundaries(t *testing.T) {
 			continue
 		}
 		s := strings.Repeat("a", n)
-		if _, err := uuid.FromString(s); err != uuid.ErrInvalidFormat {
+		if _, err := uuid.FromString(s); !errors.Is(err, uuid.ErrInvalidFormat) {
 			t.Fatalf("tamanho %d: esperava ErrInvalidFormat, obteve %v", n, err)
 		}
 	}
@@ -110,7 +111,7 @@ func TestFromStringHyphenPositions(t *testing.T) {
 	for _, pos := range []int{8, 13, 18, 23} {
 		mutated := []byte(canonical)
 		mutated[pos] = 'a'
-		if _, err := uuid.FromString(string(mutated)); err != uuid.ErrInvalidFormat {
+		if _, err := uuid.FromString(string(mutated)); !errors.Is(err, uuid.ErrInvalidFormat) {
 			t.Fatalf("hífen removido da posição %d deveria ser rejeitado", pos)
 		}
 	}
