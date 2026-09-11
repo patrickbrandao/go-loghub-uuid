@@ -746,6 +746,84 @@ reais:
       devolvem valores todos distintos, e com os campos de tempo iguais.
     - Consumo de entropia por nível igual ao da seção 3.3.
     - Bordas: pré-1970, saturação acima da faixa e níveis desconhecidos.
+12. **Vetores Dourados da Extensão Multinível**:
+    - A RFC 9562 publica vetores para as versões 3 e 5 (caso 5), mas a
+      extensão multinível é deste projeto e não tem vetor publicado em
+      lugar nenhum. Sem eles, uma reimplementação em outra linguagem não
+      tem contra o que se conferir justamente na parte que não é padrão,
+      onde é mais fácil errar.
+    - Os vetores abaixo **são contrato**. Uma implementação que produza
+      outra coisa para as mesmas entradas está errada. Mudá-los é
+      mudança de formato de dados, não ajuste de teste.
+    - As entradas são um instante e o valor dos **bits livres de
+      entropia**, todos em zero ou todos em um. São exatamente o que as
+      duas fronteiras da seção 3.5 produzem, e é assim que se obtêm sem
+      relógio: `MinAt` para os bits em zero, `MaxAt` para os bits em um.
+
+    **Grupo A** — 2026-01-01T00:00:00.123456789Z  (sec=1767225600, nsec=123456789)
+
+    | Nível | Bits livres | 16 bytes | String canônica |
+    |:---|:---|:---|:---|
+    | 1 | zero | `019b76daa87b70008000000000000000` | `019b76da-a87b-7000-8000-000000000000` |
+    | 1 | um | `019b76daa87b7fffbfffffffffffffff` | `019b76da-a87b-7fff-bfff-ffffffffffff` |
+    | 2 | zero | `019b76daa87b71c88000000000000000` | `019b76da-a87b-71c8-8000-000000000000` |
+    | 2 | um | `019b76daa87b71c8bfffffffffffffff` | `019b76da-a87b-71c8-bfff-ffffffffffff` |
+    | 3 | zero | `019b76daa87b71c8b150000000000000` | `019b76da-a87b-71c8-b150-000000000000` |
+    | 3 | um | `019b76daa87b71c8b15fffffffffffff` | `019b76da-a87b-71c8-b15f-ffffffffffff` |
+
+    **Grupo B** — 2026-01-01T00:00:00.000000000Z  (sec=1767225600, nsec=0)
+
+    | Nível | Bits livres | 16 bytes | String canônica |
+    |:---|:---|:---|:---|
+    | 1 | zero | `019b76daa80070008000000000000000` | `019b76da-a800-7000-8000-000000000000` |
+    | 1 | um | `019b76daa8007fffbfffffffffffffff` | `019b76da-a800-7fff-bfff-ffffffffffff` |
+    | 2 | zero | `019b76daa80070008000000000000000` | `019b76da-a800-7000-8000-000000000000` |
+    | 2 | um | `019b76daa8007000bfffffffffffffff` | `019b76da-a800-7000-bfff-ffffffffffff` |
+    | 3 | zero | `019b76daa80070008000000000000000` | `019b76da-a800-7000-8000-000000000000` |
+    | 3 | um | `019b76daa8007000800fffffffffffff` | `019b76da-a800-7000-800f-ffffffffffff` |
+
+    **Grupo C** — 1970-01-01T00:00:00.000000000Z  (sec=0, nsec=0)
+
+    | Nível | Bits livres | 16 bytes | String canônica |
+    |:---|:---|:---|:---|
+    | 1 | zero | `00000000000070008000000000000000` | `00000000-0000-7000-8000-000000000000` |
+    | 1 | um | `0000000000007fffbfffffffffffffff` | `00000000-0000-7fff-bfff-ffffffffffff` |
+    | 2 | zero | `00000000000070008000000000000000` | `00000000-0000-7000-8000-000000000000` |
+    | 2 | um | `0000000000007000bfffffffffffffff` | `00000000-0000-7000-bfff-ffffffffffff` |
+    | 3 | zero | `00000000000070008000000000000000` | `00000000-0000-7000-8000-000000000000` |
+    | 3 | um | `0000000000007000800fffffffffffff` | `00000000-0000-7000-800f-ffffffffffff` |
+
+    **O que cada coisa prova.**
+
+    - **Grupo A**, os três níveis: os microssegundos 456 aparecem como
+      `1c8` em `rand_a` nos níveis 2 e 3, e não no nível 1, onde o campo
+      é entropia. É a prova da posição dos microssegundos.
+    - **Grupo A**, nível 3: os nanossegundos 789 (`0x315`, dez bits)
+      aparecem repartidos entre os seis bits baixos do byte 8 (`0x31`,
+      somados à variante dão `0xb1`) e o nibble alto do byte 9 (`0x5`).
+      É a prova da posição dos nanossegundos nos dez bits altos de
+      `rand_b`.
+    - **Todas as linhas com bits livres em um**: o byte 6 nunca passa de
+      `0x7f` e o byte 8 fica sempre na faixa `0x80..0xbf`. É a prova de
+      que a versão e a variante sobrevivem ao preenchimento, e é o que
+      torna as fronteiras da seção 3.5 limites corretos.
+    - **Grupo B contra o grupo A**: com o sub-milissegundo zerado, os
+      níveis 2 e 3 devolvem `rand_a` em zero mesmo com os bits livres em
+      um, enquanto o nível 1 devolve `0xfff`. É a prova de que os níveis
+      2 e 3 **não** sorteiam `rand_a`, e pega erro de sinal e de
+      deslocamento que um instante com todos os campos preenchidos
+      esconderia.
+    - **Grupo C**: a época Unix com os 48 bits de carimbo zerados. Um
+      instante **anterior** a 1970 tem de produzir exatamente estes
+      mesmos valores, pelo piso da seção 3.2. Esse é o par que prova o
+      piso, e por isso a suíte confere o grupo C duas vezes, uma com a
+      época e outra com `1969-12-31T23:59:59.999999999Z`.
+
+    Os valores publicados aqui foram calculados por uma implementação
+    independente, escrita a partir das regras das seções 3.1, 3.2 e 3.5,
+    e só então conferidos contra a implementação de referência. Um vetor
+    produzido pela própria implementação e conferido contra ela mesma
+    não prova nada.
 
 ---
 

@@ -236,6 +236,34 @@ Convenções de cada seção:
   a nota de sincronia do layout, que agora aponta para `packV7`.
 - `ExampleGenerateAt` em `example_test.go`, com entropia fixa para ter
   saída verificável, mostrando a ida e volta com `ImportBinary`.
+- **`docs/SPEC.md` publica os vetores dourados da extensão multinível**,
+  no caso de teste obrigatório 12. A especificação se apresenta como
+  suficiente para reimplementar a biblioteca do zero, e cumpria isso
+  para as versões da RFC, que têm vetores publicados no Apêndice A da
+  RFC 9562. Para a extensão multinível, que é o diferencial do projeto e
+  não tem vetor publicado em lugar nenhum, não havia nada contra o que
+  uma reimplementação pudesse se conferir — justamente na parte que não
+  é padrão, onde é mais fácil errar.
+
+  São dezoito vetores: três instantes de referência, os três níveis e as
+  duas pontas de entropia, com os 16 bytes e a string canônica de cada
+  um. As entradas são um instante e o valor dos bits livres, que é
+  exatamente o que `MinAt` e `MaxAt` produzem, então os vetores saem sem
+  relógio e sem tocar em `Generate`. Vale lembrar que a proposta
+  arquivada de relógio injetável existia para viabilizá-los, e foi
+  recusada na seção 11.2: as fronteiras resolveram o mesmo problema de
+  graça.
+
+  Os valores foram calculados por uma implementação independente,
+  escrita a partir das regras das seções 3.1, 3.2 e 3.5, e só então
+  conferidos contra esta biblioteca. As duas concordaram nos dezoito. Um
+  vetor produzido pela própria implementação e conferido contra ela
+  mesma não provaria nada, e a especificação agora diz isso no texto.
+
+  `tests/golden_test.go` guarda a mesma tabela e quebra se qualquer bit
+  mudar de lugar, incluindo uma verificação de que a tabela não perdeu
+  linhas e outra de que um instante pré-época produz exatamente os
+  vetores da própria época.
 
 ### Decisões
 
