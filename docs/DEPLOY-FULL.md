@@ -307,7 +307,10 @@ O relógio interno é estritamente crescente: em rajadas mais rápidas que
 o tique de 100 nanossegundos ele avança sozinho, e o instante embutido
 fica ligeiramente à frente do relógio do sistema. Isso garante a ordem,
 mas significa que o carimbo de tempo de um UUIDv1 ou UUIDv6 não é leitura
-fiel do relógio sob carga sustentada.
+fiel do relógio sob carga sustentada. O mesmo mecanismo cobre um relógio
+do sistema atrasado por ajuste manual ou NTP: os instantes continuam
+crescendo a partir do último emitido, adiantados em relação ao relógio
+real, até ele os alcançar ou até uma ressincronização explícita.
 
 Para descartar esse adiantamento e voltar a acompanhar o relógio do
 sistema, sorteie uma sequência de relógio inédita:
@@ -423,6 +426,24 @@ Quanto maior o nível, mais bits de tempo e menos bits aleatórios. Em
 todos, a colisão é praticamente desprezível para volumes normais, mas se
 sua aplicação depende criticamente de unicidade entre máquinas, combine
 com um identificador de origem fora do UUID.
+
+> **Resolução do relógio do host.** O Nível 3 só grava nanossegundos
+> reais se `time.Now()` os fornecer. Em hosts cujo relógio tem resolução
+> de microssegundo, como o macOS, o campo de nanossegundos sai sempre
+> zero: são dez bits de aleatoriedade trocados por nada, sem ganho de
+> ordenação em relação ao Nível 2. `TestTieRateReport` informa quantos
+> instantes distintos o relógio do host oferece; use-o para escolher o
+> nível.
+
+> **Relógio do sistema atrasado.** O UUIDv7 lê o relógio de parede a cada
+> geração. Se ele for atrasado (ajuste manual ou salto de NTP), os UUIDs
+> seguintes ficam lexicograficamente antes dos anteriores até o relógio
+> alcançar o instante antigo; a RFC 9562 permite esse comportamento e a
+> biblioteca não tenta compensá-lo. As versões 1 e 6 têm comportamento
+> distinto: como o relógio interno nunca regride, elas continuam
+> emitindo instantes crescentes a partir do último valor, adiantadas em
+> relação ao relógio real, até ele as alcançar. Veja a seção sobre as
+> versões 1 e 6.
 
 ---
 

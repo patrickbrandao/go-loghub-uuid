@@ -241,6 +241,11 @@ func NodeID() []byte {
 // continuam reservados, portanto reaplicar o mesmo nó nunca repete um
 // UUIDv1 ou UUIDv6. Para descartar o adiantamento acumulado do relógio,
 // sorteie uma sequência nova com SetClockSequence(-1).
+//
+// Os bytes são copiados como estão. Se o valor não for um endereço MAC
+// real, a RFC 9562 seção 6.10 pede o bit 0 do primeiro byte (multicast)
+// ligado, para sinalizar que o nó não identifica uma placa de rede; essa
+// marcação fica a cargo do chamador.
 func SetNodeID(id []byte) bool {
 	if len(id) < 6 {
 		return false

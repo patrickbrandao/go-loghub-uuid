@@ -85,6 +85,9 @@ e no Go 1.27.
   `tests/race_disabled_test.go` (tags de compilação) sinalizam o
   detector, e as três travas que dependem do pool são puladas sob
   `-race`; a medição válida é a feita sem o detector, que o CI executa.
+- `FuzzNullUUIDJSON`: alvo de fuzzing para o leitor de JSON de
+  `NullUUID`, que exige concordância com o tipo `UUID` lido pelo
+  `encoding/json` em aceitar, recusar e no valor produzido.
 - Testes novos: `TestClockSequenceReuseNeverRepeats`,
   `TestSetClockSequenceRandomIsFresh`,
   `TestTimestampWithLevelDiscardsOutOfRangeFields` e casos adicionais em
@@ -117,6 +120,14 @@ e no Go 1.27.
   sobre as travas de alocação sob `-race`. `docs/git.md`: só etiquetar
   com o fluxo verde. `README.md`: selo do CI. `STARTHERE.md`: árvore
   atualizada.
+- `docs/DEPLOY-FULL.md`: avisos sobre a resolução do relógio do host
+  (o campo de nanossegundos do Nível 3 é sempre zero em hosts com relógio
+  de microssegundo) e sobre relógio do sistema atrasado, no UUIDv7 e nas
+  versões 1 e 6. Comentário de `SetNodeID` explicita que o bit multicast
+  de um nó fornecido pelo chamador é responsabilidade dele.
+- `CLAUDE.md` atualizado: raiz com `CHANGELOG.md` e `.github/`, comandos
+  de CI e de fuzzing, o piso de relógio por sequência, `Scan` com texto
+  vazio e a regra sobre as travas de alocação sob `-race`.
 
 ---
 

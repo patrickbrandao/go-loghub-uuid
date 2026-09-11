@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -122,6 +123,59 @@ func FuzzParse(f *testing.F) {
 		var back uuid.UUID
 		if err := back.UnmarshalText(text); err != nil || back != u {
 			t.Fatalf("volta pelo texto divergiu para %q: %v vs %v, erro %v", s, u, back, err)
+		}
+	})
+}
+
+// FuzzNullUUIDJSON procura entradas que façam NullUUID.UnmarshalJSON
+// entrar em pânico ou divergir do tipo UUID lido pelo encoding/json.
+// NullUUID tem um leitor de JSON próprio, com caminho direto sem escapes
+// e delegação ao encoding/json quando há barra invertida; os dois
+// caminhos precisam concordar com o que o encoding/json faria para um
+// UUID comum. Rode com:
+//
+//	go test ./tests/ -run '^$' -fuzz FuzzNullUUIDJSON -fuzztime 30s
+func FuzzNullUUIDJSON(f *testing.F) {
+	f.Add([]byte(`"` + canonical + `"`))
+	f.Add([]byte(`"{` + canonical + `}"`))
+	f.Add([]byte(`"urn:uuid:` + canonical + `"`))
+	f.Add([]byte(`"` + strings.ReplaceAll(canonical, "-", "") + `"`))
+	f.Add([]byte(`"` + strings.ReplaceAll(canonical, "0", `\u0030`) + `"`))
+	f.Add([]byte(`"` + strings.ReplaceAll(canonical, "-", `\u002d`) + `"`))
+	f.Add([]byte(`"\x00"`))
+	f.Add([]byte(`null`))
+	f.Add([]byte(`""`))
+	f.Add([]byte(`"`))
+	f.Add([]byte(`123`))
+	f.Add([]byte(``))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// A chamada direta jamais pode entrar em pânico, e todo erro dela
+		// precisa ser reconhecível como erro de formato.
+		var direct uuid.NullUUID
+		if err := direct.UnmarshalJSON(data); err != nil && !errors.Is(err, uuid.ErrInvalidFormat) {
+			t.Fatalf("UnmarshalJSON(%q): erro %v não é reconhecível como ErrInvalidFormat", data, err)
+		}
+
+		// Pelo encoding/json, NullUUID e UUID precisam aceitar e recusar as
+		// mesmas entradas e produzir o mesmo valor. O literal null é a
+		// exceção: vira valor ausente em NullUUID e não toca um UUID.
+		var viaNull uuid.NullUUID
+		var viaUUID uuid.UUID
+		errNull := json.Unmarshal(data, &viaNull)
+		errUUID := json.Unmarshal(data, &viaUUID)
+		if (errNull == nil) != (errUUID == nil) {
+			t.Fatalf("NullUUID e UUID divergiram ao aceitar %q: %v vs %v", data, errNull, errUUID)
+		}
+		if errNull != nil {
+			return
+		}
+		if viaNull.Valid {
+			if viaNull.UUID != viaUUID {
+				t.Fatalf("NullUUID e UUID divergiram no valor de %q: %s vs %s", data, viaNull.UUID, viaUUID)
+			}
+		} else if !viaUUID.IsZero() {
+			t.Fatalf("NullUUID ausente mas UUID leu %s de %q", viaUUID, data)
 		}
 	})
 }

@@ -20,17 +20,24 @@ go run ./tests/benchmark-bulk                             # generate 1,000,000 p
 ```
 
 ```bash
-go test ./tests/ -race -run 'TestConcurrentUniqueness|TestMassConcurrent'  # detector de corrida
-go test ./tests/ -run '^$' -fuzz FuzzFromString -fuzztime 60s              # fuzzing do parser
+go test ./... -race -short                                       # detector de corrida (suíte inteira)
+go test ./tests/ -short -run 'Allocations|SingleAllocation' -v   # travas de alocação (sem -race)
+go test ./tests/ -run '^$' -fuzz FuzzFromString -fuzztime 60s    # fuzzing do parser estrito
+go test ./tests/ -run '^$' -fuzz FuzzParse -fuzztime 60s         # fuzzing do parser permissivo
+go test ./tests/ -run '^$' -fuzz FuzzNullUUIDJSON -fuzztime 60s  # fuzzing do JSON de NullUUID
 ```
 
-Note: tests live in `./tests/` and import the library by its **module path** (as an external consumer would), not as an internal package. Run `go test` against `./tests/`, not the repo root. Use `-short` to skip the 1M mass tests.
+Note: tests live in `./tests/` and import the library by its **module path** (as an external consumer would), not as an internal package. Run `go test` against `./tests/`, not the repo root, except for `clock_internal_test.go`, the only root test file: it covers pure clock functions and the sequence-floor state machine, which cannot be driven from outside the package. Use `-short` to skip the 1M mass tests.
+
+**Allocation locks are skipped under `-race`.** `sync.Pool` compiled with the race detector deliberately drops one in four items on `Put`, so `AllocsPerRun` sees the PRNG being rebuilt and the zero-alloc locks that depend on the default generator fail intermittently (seen on Go 1.22). `tests/race_enabled_test.go` / `race_disabled_test.go` expose `raceDetectorEnabled` via build tags; the three pool-dependent locks skip themselves under `-race`, and CI measures them in a separate step without the detector. Do not "fix" this by relaxing the locks.
+
+**CI.** `.github/workflows/ci.yml` runs gofmt (stable only), vet, build, `-race -short`, the allocation locks and a short `-benchmem` benchmark on Go 1.22 (the declared minimum in `go.mod`) and stable; a weekly job runs the full suite and 60 s of fuzzing per target. Never tag a release without a green `test` job on that commit. Keep `go.mod` at `go 1.22` unless a newer API is genuinely needed; CI on 1.22 is what enforces that.
 
 **Ordering has no monotonic counter.** Ordering is chronological *at the level's resolution*, with a **random** tie-break inside the same embedded instant. Generating a UUID is faster than most hosts' clock step, so consecutive UUIDs routinely tie (always, at Level1, whose resolution is the millisecond). Never write an ordering test that counts "regressions in a tight loop against a tolerated threshold" — that measures the host clock, not the library, and is why the old `TestMonotonicity` failed permanently on microsecond-clock hosts such as macOS. The clock-independent invariant lives in `TestOrderingFollowsEmbeddedTime`; `TestTieRateReport` reports the tie rate as a diagnostic; `TestMonotonicity` now sleeps between generations so the embedded instant genuinely advances.
 
 ## Architecture
 
-**Production code lives only in the repo root**, alongside `go.mod`/`README`/`STARTHERE`/`LICENSE`. Everything else — `docs/`, `docs/SPEC.md`, `tests/` — is intentionally kept out of root so the production surface stays minimal. Preserve this separation: do not add non-production files to root.
+**Production code lives only in the repo root**, alongside `go.mod`, `README.md`, `STARTHERE.md`, `CHANGELOG.md`, `LICENSE`, this file, the single internal test `clock_internal_test.go`, and `.github/` (which GitHub requires at root). Everything else — `docs/`, `docs/SPEC.md`, `tests/` — is intentionally kept out of root so the production surface stays minimal. Preserve this separation: do not add other non-production files to root. `CHANGELOG.md` is the project history; every behavior change gets an entry under "Não publicado" with the file it touched.
 
 Each source file is a distinct concern.
 
@@ -68,11 +75,15 @@ A UUIDv7 carries a 48-bit millisecond timestamp in its top bytes; the lower bits
 | `Level2` | microseconds 0–999 | random                  | random           |
 | `Level3` | microseconds 0–999 | nanoseconds 0–999       | random (52 bits) |
 
-Because the precision bits sit immediately after the milliseconds, **lexicographic string order stays chronological** across all levels (subject to the tie-break caveat above). Unknown `Level` values fall back to `Level1`. The exact byte layout is documented in the `Generate` doc comment at [uuid.go:148](uuid.go:148) and in [STARTHERE.md](STARTHERE.md) §4 — keep these two in sync if the bit layout ever changes.
+Because the precision bits sit immediately after the milliseconds, **lexicographic string order stays chronological** across all levels (subject to the tie-break caveat above). Unknown `Level` values fall back to `Level1`. The exact byte layout is documented in the `Generate` doc comment at [uuid.go:154](uuid.go:154), in [STARTHERE.md](STARTHERE.md) §4 and in `docs/SPEC.md` §3.1 — keep the three in sync if the bit layout ever changes.
 
 **Entropy draws per level.** Level2/Level3 put the microseconds in `rand_a`, so they consume **one** 64-bit word; only Level1 (and unknown levels, which behave as Level1) consumes **two**. `tests/robustness_test.go` locks this in — it matters for callers who supply `crypto/rand` through `NewGeneratorWith`.
 
-**Clock drift in v1/v2/v6.** The shared clock advances one 100 ns tick per generation, so a sustained burst pushes the embedded instant ahead of the wall clock. RFC 9562 allows this. It deliberately differs from `google/uuid`, which keeps the wall-clock instant and increments the 14-bit clock sequence instead: no drift there, but no strict ordering inside one tick either. `TestTimeBasedClockDrift` documents and bounds it; `TestTimestampRoundTrip` resets the accumulated drift by changing the clock sequence, which zeroes the last-time floor.
+**Clock drift in v1/v2/v6.** The shared clock advances one 100 ns tick per generation, so a sustained burst pushes the embedded instant ahead of the wall clock. RFC 9562 allows this. It deliberately differs from `google/uuid`, which keeps the wall-clock instant and increments the 14-bit clock sequence instead: no drift there, but no strict ordering inside one tick either. `TestTimeBasedClockDrift` documents and bounds it.
+
+**Clock floor is per clock sequence.** `clock.go` keeps `seqLastTime`, a map from each clock sequence ever used in the process to the last instant emitted with it. Switching sequences saves the outgoing floor and adopts the incoming one (zero for a never-used sequence), so for every sequence the emitted instants are strictly increasing for the life of the process and no (instant, sequence) pair ever repeats — that is the uniqueness guarantee for v1/v6, independent of node changes. `SetClockSequence(-1)` always draws an unused sequence, which is the only way to discard accumulated drift (tests use it to resynchronize with the wall clock). This deliberately differs from `google/uuid`, which zeroes the floor on any sequence change and can repeat a v1 UUID when returning to an old sequence. Locked in by `TestSequenceFloorSurvivesRoundTrip` (internal, simulates drift directly) and `TestClockSequenceReuseNeverRepeats`. The map is only touched on sequence changes, never per generation.
+
+**`Scan` treats empty text as absent.** `""` and `[]byte{}` set `Nil` without error (and `Valid=false` on `NullUUID`), matching `google/uuid`; migrated code reading `DEFAULT ''` columns depends on it. `IsInvalidLengthError` uses `errors.Is`. `NullUUID.UnmarshalJSON` delegates to `encoding/json` only when the string contains a backslash; the no-escape path stays allocation-free.
 
 **Adding `MarshalText` changed the JSON wire format.** A `UUID` used to serialize as a 16-number array; it now serializes as the canonical string. Same for `gob`. The API is additive, the stored data is not.
 
@@ -87,6 +98,7 @@ Hot paths avoid allocations: binary generation does zero allocs; `String()` writ
 ## Reference docs
 
 - [STARTHERE.md](STARTHERE.md) — full project map and public API listing.
+- [CHANGELOG.md](CHANGELOG.md) — history per version, rejected proposals with reasons, and the open design proposals (pool vs. runtime generator, optional monotonic generator, injectable clock, `AppendTo`/`Bytes`/`IsValid`). Check it before re-proposing any of those.
 - [docs/SPEC.md](docs/SPEC.md) — language-agnostic specification sufficient to reimplement the entire library from scratch across all supported UUID versions (1 to 8, parsing, concurrency, and serialization).
 - [docs/MIGRATION.md](docs/MIGRATION.md) — moving from `github.com/google/uuid`; lists what was intentionally not imported (`SetRand`, the rand pool, `SetNodeInterface`) and why.
 - [docs/](docs/) — quick use, full use, testing/benchmark guides.
