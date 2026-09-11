@@ -73,6 +73,23 @@ func TestGenerateV4ZeroAllocations(t *testing.T) {
 	}
 }
 
+// TestAppendToZeroAllocations trava a razão de existir de AppendTo: com
+// capacidade sobrando no buffer do chamador, a escrita não aloca nada,
+// enquanto String aloca a string devolvida em toda chamada.
+func TestAppendToZeroAllocations(t *testing.T) {
+	u := uuid.Generate(uuid.Level3)
+	buf := make([]byte, 0, 64)
+	allocs := testing.AllocsPerRun(1_000, func() {
+		sinkB = u.AppendTo(buf[:0])
+	})
+	if allocs != 0 {
+		t.Errorf("AppendTo: %.0f alocações por chamada, esperado 0", allocs)
+	}
+}
+
+// sinkB evita que o compilador elimine as chamadas de AppendTo.
+var sinkB []byte
+
 // TestTimeBasedZeroAllocations confere que as versões 1, 2 e 6 também
 // escrevem direto no valor de retorno, sem escapar para o heap.
 func TestTimeBasedZeroAllocations(t *testing.T) {

@@ -1,5 +1,7 @@
 package loghubuuid
 
+import "slices"
+
 // Este arquivo dá ao tipo UUID as quatro interfaces de serialização da
 // biblioteca padrão: encoding.TextMarshaler, encoding.TextUnmarshaler,
 // encoding.BinaryMarshaler e encoding.BinaryUnmarshaler.
@@ -30,13 +32,38 @@ func encodeHex(dst []byte, u UUID) {
 	}
 }
 
+// AppendTo escreve a forma canônica de 36 bytes no fim de dst e devolve o
+// slice estendido, como fazem as funções Append da biblioteca padrão.
+//
+// É o caminho mais barato para serializar muitos identificadores: não
+// aloca nada quando dst tem capacidade sobrando, enquanto String paga uma
+// alocação por chamada. Reaproveite o mesmo buffer entre chamadas:
+//
+//	buf = u.AppendTo(buf[:0])
+//
+// Passar nil é válido e faz a função alocar os 36 bytes.
+func (u UUID) AppendTo(dst []byte) []byte {
+	n := len(dst)
+	dst = slices.Grow(dst, 36)[:n+36]
+	encodeHex(dst[n:], u)
+	return dst
+}
+
+// AppendText é AppendTo com a assinatura da interface encoding.TextAppender,
+// introduzida no Go 1.24. O erro devolvido é sempre nulo.
+//
+// A interface não é referenciada em lugar nenhum do pacote, então o método
+// compila também nas versões anteriores, onde simplesmente não satisfaz
+// interface alguma. Isso mantém o go.mod em 1.22.
+func (u UUID) AppendText(dst []byte) ([]byte, error) {
+	return u.AppendTo(dst), nil
+}
+
 // MarshalText devolve a representação canônica em texto, com 36 bytes.
 // Implementa encoding.TextMarshaler, o que faz encoding/json gravar o
 // UUID como string.
 func (u UUID) MarshalText() ([]byte, error) {
-	buf := make([]byte, 36)
-	encodeHex(buf, u)
-	return buf, nil
+	return u.AppendTo(make([]byte, 0, 36)), nil
 }
 
 // UnmarshalText lê a representação em texto, aceitando os mesmos quatro

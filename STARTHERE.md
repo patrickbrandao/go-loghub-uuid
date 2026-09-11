@@ -43,8 +43,8 @@ go-loghub-uuid/
 │
 │   # PRODUÇÃO — API de apoio
 ├── parse.go                # Parse permissivo, Validate, FromBytes, MustParse
-├── values.go               # Nil, Max, Compare, URN, UUIDs, descrições em texto
-├── encoding.go             # MarshalText/Binary e as leituras correspondentes
+├── values.go               # Nil, Max, Compare, URN, Bytes, IsValid, UUIDs
+├── encoding.go             # AppendTo, MarshalText/Binary e as leituras
 ├── sql.go                  # Scan, Value e NullUUID
 ├── inspect.go              # Timestamp, GregorianTime, ClockSequence, NodeID
 ├── entropy.go              # NewGeneratorWithReader e NewCryptoGenerator
@@ -133,6 +133,8 @@ próprias.
 
 **Conversão**
 - `(UUID) String() string`
+- `(UUID) AppendTo(dst []byte) []byte` — escreve os 36 bytes no buffer do
+  chamador; sem alocação quando há capacidade.
 - `FromString(string) (UUID, error)`
 - `BinaryToString(UUID) string` — apelido de `String()`
 - `StringToBinary(string) (UUID, error)` — apelido de `FromString`
@@ -180,6 +182,8 @@ própria, independente do caminho do UUIDv7.
 ### 3.4 Serialização e banco de dados
 
 - `(UUID) MarshalText`, `(*UUID) UnmarshalText`
+- `(UUID) AppendText(dst []byte) ([]byte, error)` — `encoding.TextAppender`
+  do Go 1.24; o erro é sempre nulo.
 - `(UUID) MarshalBinary`, `(*UUID) UnmarshalBinary`
 - `(*UUID) Scan(any) error`, `(UUID) Value() (driver.Value, error)`
 - `NullUUID` — coluna que aceita `NULL`, com `Scan`, `Value` e as
@@ -201,6 +205,9 @@ própria, independente do caminho do UUIDv7.
 - `(UUID) ClockSequence() (int, bool)`, `(UUID) NodeID() []byte`
 - `(UUID) Domain() (Domain, bool)`, `(UUID) ID() (uint32, bool)`
 - `(UUID) IsZero() bool`, `(UUID) IsMax() bool`
+- `(UUID) IsValid() bool` — variante RFC e versão de 1 a 8; `Nil` e `Max`
+  contam como válidos.
+- `(UUID) Bytes() []byte` — cópia dos 16 bytes.
 - `(UUID) Compare(UUID) int`, `(UUID) URN() string`
 - `Nil`, `Max`, `UUIDs` com `Strings() []string`
 - `VersionString(byte) string`, `VariantString(byte) string`

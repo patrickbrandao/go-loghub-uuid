@@ -384,6 +384,21 @@ A biblioteca deve disponibilizar operações de consulta:
 - **`Domain() (Domain, bool)`** e **`ID() (uint32, bool)`**: para UUIDv2.
 - **`NodeID() []byte`** (método de `UUID`): devolve uma cópia dos 6 bytes
   de nó para v1, v2 e v6, e `nil` para as demais versões.
+- **`IsValid() bool`**: verdadeiro quando a variante é a da RFC (`10`
+  binário) **e** a versão está entre 1 e 8. Os valores especiais `Nil` e
+  `Max` contam como válidos, apesar de não carregarem versão nem
+  variante, porque a RFC 9562 seções 5.9 e 5.10 os define como válidos;
+  `IsZero` e `IsMax` distinguem os dois casos. A verificação **não** é
+  específica de uma versão: um UUIDv4 gerado em outro sistema é válido.
+- **`Bytes() []byte`**: cópia dos 16 bytes em ordem de rede. Existe
+  separado do acesso direto ao vetor porque este último devolve uma
+  referência ao próprio valor, e porque em linguagens onde o tipo tem
+  formatação própria (como `fmt.Stringer` em Go) os verbos hexadecimais
+  formatam o texto, não os bytes.
+- **`AppendTo(dst) dst`**: escreve os 36 bytes da forma canônica no fim
+  do buffer do chamador e devolve o buffer estendido, **sem alocar**
+  quando houver capacidade. É o caminho previsto para serializar grandes
+  volumes; a conversão que devolve string aloca a cada chamada.
 
 ---
 

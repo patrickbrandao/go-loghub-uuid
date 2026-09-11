@@ -192,5 +192,16 @@ dado precisa ser convertido na migração.
 - **`Import` e `ImportBinary`**: extraem segundos, milissegundos,
   microssegundos e nanossegundos em uma struct.
 - **Geração sem trava e sem alocação** no caminho do UUIDv7.
+- **`AppendTo`**: escreve a forma canônica no buffer do chamador, sem
+  alocar quando há capacidade. Não existe no pacote do Google, onde o
+  único caminho para texto é `String`, que aloca a cada chamada.
+  `AppendText` expõe a mesma escrita com a assinatura de
+  `encoding.TextAppender` (Go 1.24).
+- **`Bytes()`**: cópia dos 16 bytes. Não existe no pacote do Google — lá
+  o caminho é `u[:]`, que devolve uma fatia sobre o próprio valor, ou
+  `MarshalBinary`, cujo erro é sempre nulo.
+- **`IsValid()`**: confere variante e versão em uma chamada. Não existe
+  no pacote do Google, onde a verificação equivalente é comparar
+  `Version()` e `Variant()` à mão.
 - **`Compare`, `IsZero`, `IsMax`** e as descrições em texto
   `VersionString` e `VariantString`.

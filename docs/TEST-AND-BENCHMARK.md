@@ -280,6 +280,8 @@ Benchmark (`go test ./tests/ -run '^$' -bench Benchmark -benchmem -benchtime=2s`
 | `GenerateStringLevel1`     | ~67,9 |        1 |       48 |
 | `GenerateStringLevel3`     | ~64,4 |        1 |       48 |
 | `GenerateLevel3Parallel`   |  ~9,7 |        0 |        0 |
+| `String` (UUID já pronto)  | ~26,3 |        1 |       48 |
+| `AppendTo` (buffer reusado)| ~18,8 |        0 |        0 |
 | `FromString`               | ~31,6 |        0 |        0 |
 
 Geração em massa de 1.000.000 (`go run ./tests/benchmark-bulk`):

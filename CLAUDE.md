@@ -67,8 +67,8 @@ Each source file is a distinct concern.
 
 **Support API.**
 - `parse.go` — lenient `Parse`/`ParseBytes` (four formats, generic over `string`/`[]byte` to stay allocation-free), `Validate`, `FromBytes`, `MustParse`, `Must`, and the wrapped format errors.
-- `values.go` — `Nil`, `Max`, `Compare`, `URN`, `UUIDs`, `VersionString`, `VariantString`.
-- `encoding.go` — `encodeHex` plus the text and binary marshalers.
+- `values.go` — `Nil`, `Max`, `Compare`, `URN`, `Bytes`, `IsValid`, `UUIDs`, `VersionString`, `VariantString`.
+- `encoding.go` — `encodeHex`, `AppendTo`/`AppendText`, plus the text and binary marshalers.
 - `sql.go` — `Scan`, `Value`, `NullUUID`.
 - `inspect.go` — version-aware `Timestamp`, `TimestampWithLevel`, `GregorianTime`, `ClockSequence`, `NodeID`, `Domain`, `ID`.
 - `entropy.go` — `NewGeneratorWithReader`, `NewCryptoGenerator`, `ErrEntropySource`.

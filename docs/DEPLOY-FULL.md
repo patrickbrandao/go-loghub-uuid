@@ -156,6 +156,28 @@ s := u.String()              // método
 s := uuid.BinaryToString(u)  // função equivalente
 ```
 
+### Binário → texto sem alocar
+
+`String` aloca a string devolvida a cada chamada. Quando são milhões de
+identificadores por segundo — uma linha de log, um corpo JSON montado à
+mão —, `AppendTo` escreve os mesmos 36 bytes no buffer do chamador e não
+aloca nada enquanto houver capacidade:
+
+```go
+buf := make([]byte, 0, 64)
+for _, u := range lista {
+	buf = u.AppendTo(buf[:0])
+	escreva(buf)
+}
+```
+
+Medido neste repositório (Apple M2, Go 1.27): `AppendTo` custa ~18,8 ns
+e zero alocações, contra ~26 ns e uma alocação de 48 bytes de `String`.
+Passar `nil` como `dst` é válido e aloca os 36 bytes.
+
+`AppendText` é o mesmo método com a assinatura de
+`encoding.TextAppender` (Go 1.24), devolvendo um erro sempre nulo.
+
 ### String → binário
 
 ```go
@@ -251,12 +273,27 @@ uuid.Nil            // 00000000-0000-0000-0000-000000000000
 uuid.Max            // ffffffff-ffff-ffff-ffff-ffffffffffff
 u.IsZero()          // é o valor nulo?
 u.IsMax()           // tem todos os bits em um?
+u.IsValid()         // variante RFC e versão de 1 a 8?
+u.Bytes()           // cópia dos 16 bytes
 a.Compare(b)        // -1, 0 ou 1; para igualdade basta a == b
 u.URN()             // urn:uuid:0192f7c5-...
 
 lista := uuid.UUIDs{a, b, c}
 lista.Strings()     // []string com as formas canônicas
 ```
+
+`IsValid` aceita `Nil` e `Max`, que a RFC 9562 define como valores
+especiais válidos apesar de não carregarem versão nem variante; use
+`IsZero` e `IsMax` para distingui-los. Não é uma verificação de UUIDv7:
+um UUIDv4 vindo de outro sistema também é válido. Para exigir a versão
+7, compare `u.Version()` com `7`.
+
+`Bytes` devolve uma **cópia**; `u[:]` é mais barato e não copia, mas
+aponta para o próprio valor. Use `Bytes` quando o destino guardar a
+referência. Serve também para contornar uma armadilha de formatação:
+como `UUID` satisfaz `fmt.Stringer`, `%x` sobre um `UUID` formata a
+string canônica, não os bytes — `fmt.Printf("%x", u.Bytes())` imprime os
+32 dígitos esperados.
 
 ## Gerar as outras versões de UUID
 

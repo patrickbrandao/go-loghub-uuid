@@ -275,6 +275,105 @@ func TestTextMarshaling(t *testing.T) {
 	}
 }
 
+// TestAppendTo confere a escrita no buffer do chamador: o conteúdo
+// anexado, a preservação do que já estava em dst, o buffer nulo e a
+// reutilização com dst[:0].
+func TestAppendTo(t *testing.T) {
+	u := uuid.MustParse(canonical)
+
+	if got := string(u.AppendTo(nil)); got != canonical {
+		t.Errorf("AppendTo(nil) = %q, esperado %q", got, canonical)
+	}
+
+	prefixo := []byte("id=")
+	if got := string(u.AppendTo(prefixo)); got != "id="+canonical {
+		t.Errorf("AppendTo sobre prefixo = %q, esperado %q", got, "id="+canonical)
+	}
+	if string(prefixo) != "id=" {
+		t.Errorf("AppendTo alterou o comprimento de dst: %q", prefixo)
+	}
+
+	// Reutilizar o mesmo buffer é o uso previsto pela documentação.
+	buf := make([]byte, 0, 64)
+	for _, esperado := range []uuid.UUID{u, uuid.Nil, uuid.Max} {
+		buf = esperado.AppendTo(buf[:0])
+		if string(buf) != esperado.String() {
+			t.Errorf("AppendTo reutilizando o buffer = %q, esperado %q", buf, esperado)
+		}
+	}
+
+	// AppendText é a mesma escrita com a assinatura de encoding.TextAppender.
+	texto, err := u.AppendText([]byte("x"))
+	if err != nil || string(texto) != "x"+canonical {
+		t.Errorf("AppendText = %q, erro %v", texto, err)
+	}
+}
+
+// TestBytes confere que Bytes devolve uma cópia independente dos 16
+// bytes, ao contrário de u[:].
+func TestBytes(t *testing.T) {
+	u := uuid.MustParse(canonical)
+
+	raw := u.Bytes()
+	if len(raw) != 16 {
+		t.Fatalf("Bytes devolveu %d bytes, esperado 16", len(raw))
+	}
+	if uuid.UUID(raw[0:16]) != u {
+		t.Errorf("Bytes = %x, esperado %x", raw, u[:])
+	}
+
+	raw[0] = 0xFF
+	if u[0] == 0xFF {
+		t.Error("Bytes devolveu uma fatia sobre o próprio valor de origem")
+	}
+}
+
+// TestIsValid confere a semântica adotada: variante RFC e versão de 1 a
+// 8, com Nil e Max aceitos como os valores especiais que a RFC 9562
+// define.
+func TestIsValid(t *testing.T) {
+	validos := map[string]uuid.UUID{
+		"nulo":     uuid.Nil,
+		"maximo":   uuid.Max,
+		"versao 1": uuid.GenerateV1(),
+		"versao 2": uuid.GenerateV2(uuid.Org, 1),
+		"versao 3": uuid.GenerateV3(uuid.NameSpaceDNS, []byte("x")),
+		"versao 4": uuid.GenerateV4(),
+		"versao 5": uuid.GenerateV5(uuid.NameSpaceDNS, []byte("x")),
+		"versao 6": uuid.GenerateV6(),
+		"versao 7": uuid.Generate(uuid.Level3),
+		"versao 8": uuid.GenerateV8Random(),
+		"canonico": uuid.MustParse(canonical),
+	}
+	for nome, u := range validos {
+		if !u.IsValid() {
+			t.Errorf("%s: IsValid devolveu falso para %s", nome, u)
+		}
+	}
+
+	base := uuid.MustParse(canonical)
+
+	semVersao := base
+	semVersao[6] &= 0x0F // versão 0
+	if semVersao.IsValid() {
+		t.Error("IsValid deveria recusar versão 0")
+	}
+
+	versaoNove := base
+	versaoNove[6] = (versaoNove[6] & 0x0F) | 0x90
+	if versaoNove.IsValid() {
+		t.Error("IsValid deveria recusar versão 9")
+	}
+
+	for _, variante := range []byte{0x00, 0x40, 0xC0, 0xE0} {
+		naoRFC := base
+		naoRFC[8] = (naoRFC[8] & 0x3F) | variante
+		if naoRFC.IsValid() {
+			t.Errorf("IsValid deveria recusar a variante %#02x (codigo %d)", variante, naoRFC.Variant())
+		}
+	}
+}
+
 // TestBinaryMarshaling confere as interfaces binárias da biblioteca
 // padrão, inclusive a garantia de que o resultado não aponta para o valor
 // de origem.

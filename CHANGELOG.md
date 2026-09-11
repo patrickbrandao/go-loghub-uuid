@@ -49,14 +49,12 @@ decididas — entre elas a troca da fonte de entropia do gerador padrão.
   de palavras sorteadas por nível continua o mesmo (uma nos níveis 2 e 3,
   duas no nível 1). Sem o pool, `strongSeed` e o import de `crypto/rand`
   saíram de `uuid.go`. (`uuid.go`)
-- **As travas de alocação voltaram a rodar sob `-race`.** As três que
-  dependem do gerador padrão eram puladas com o detector ativo, porque o
-  `sync.Pool` descarta itens de propósito nesse modo e as realocações
-  entravam na conta de `AllocsPerRun`. Sem pool não há estado a recriar:
-  `skipIfRaceDetector` e o par de arquivos com marcação de compilação
-  `tests/race_enabled_test.go` e `tests/race_disabled_test.go` foram
-  removidos. A integração contínua mantém o passo dedicado sem detector,
-  que continua sendo a medição de referência.
+- **As travas de alocação passaram a valer também sob `-race`.** Com o
+  `sync.Pool`, o detector de corrida descartava itens de propósito e as
+  realocações do PRNG entravam na conta de `AllocsPerRun`, o que obrigava
+  a pular três travas sob o detector. Sem pool não há estado a recriar, e
+  as travas passam nos dois modos. A integração contínua mantém o passo
+  dedicado sem detector, que continua sendo a medição de referência.
   (`tests/alloc_test.go`, `.github/workflows/ci.yml`)
 - **`Scan` trata texto vazio como ausência de valor.** `UUID.Scan`
   passou a gravar o UUID nulo, sem erro, para `""` e para `[]byte{}`,
@@ -108,15 +106,29 @@ decididas — entre elas a troca da fonte de entropia do gerador padrão.
   um benchmark curto com `-benchmem`, em matriz com Go 1.22 e a versão
   estável. Semanalmente e sob demanda: suíte completa com os testes de
   massa e 60 segundos de fuzzing em cada analisador.
-- **Travas de alocação puladas sob `-race`.** A matriz revelou que, no
-  Go 1.22, `go test -race` falhava de forma intermitente nas travas de
-  alocação do gerador padrão. Não é defeito da biblioteca: o `sync.Pool`
-  compilado com o detector de corrida descarta de propósito um em cada
-  quatro itens devolvidos, e `testing.AllocsPerRun` contava as
-  realocações do PRNG. Os arquivos `tests/race_enabled_test.go` e
-  `tests/race_disabled_test.go` (tags de compilação) sinalizam o
-  detector, e as três travas que dependem do pool são puladas sob
-  `-race`; a medição válida é a feita sem o detector, que o CI executa.
+- **`AppendTo(dst []byte) []byte`** escreve a forma canônica de 36 bytes
+  no fim do buffer do chamador e devolve o slice estendido, sem alocar
+  quando há capacidade. É o caminho para serializar grandes volumes:
+  medido aqui (Apple M2, Go 1.27) em ~18,8 ns e zero alocações, contra
+  ~26 ns e uma alocação de 48 bytes de `String`. Reutilize o buffer com
+  `buf = u.AppendTo(buf[:0])`; `dst` nulo é válido. `AppendText` expõe a
+  mesma escrita com a assinatura de `encoding.TextAppender`, do Go 1.24 —
+  a interface não é referenciada em lugar nenhum, então o método compila
+  também no Go 1.22 e o `go.mod` não sobe. `MarshalText` passou a
+  delegar a `AppendTo`, com a mesma alocação única de antes; `URN` e
+  `String` ficaram como estavam, porque ali o `AppendTo` custaria uma
+  alocação a mais. (`encoding.go`)
+- **`Bytes() []byte`** devolve uma cópia dos 16 bytes. Ao contrário de
+  `u[:]`, não aponta para o valor de origem, e ao contrário de
+  `MarshalBinary` não carrega um erro sempre nulo. Serve também para
+  contornar a armadilha de `%x` sobre um `UUID`, que formata a string
+  canônica por causa de `fmt.Stringer`. (`values.go`)
+- **`IsValid() bool`** confere variante e versão em uma chamada:
+  verdadeiro para a variante RFC com versão de 1 a 8. `Nil` e `Max` são
+  aceitos, porque a RFC 9562 seções 5.9 e 5.10 os define como valores
+  especiais válidos apesar de não carregarem versão nem variante; use
+  `IsZero` e `IsMax` para distingui-los. Não é uma verificação de
+  UUIDv7: um UUIDv4 de outra origem também é válido. (`values.go`)
 - `FuzzNullUUIDJSON`: alvo de fuzzing para o leitor de JSON de
   `NullUUID`, que exige concordância com o tipo `UUID` lido pelo
   `encoding/json` em aceitar, recusar e no valor produzido. Incluído no
@@ -198,9 +210,9 @@ decididas — entre elas a troca da fonte de entropia do gerador padrão.
   `Time`; texto vazio em `Scan`; como ressincronizar o relógio das
   versões 1 e 6.
 - `docs/TEST-AND-BENCHMARK.md`: seção de integração contínua e nota
-  sobre as travas de alocação sob `-race`. `docs/git.md`: só etiquetar
-  com o fluxo verde. `README.md`: selo do CI. `STARTHERE.md`: árvore
-  atualizada.
+  sobre as travas de alocação sob o detector de corrida. `docs/git.md`:
+  só etiquetar com o fluxo verde. `README.md`: selo do CI.
+  `STARTHERE.md`: árvore atualizada.
 - `docs/DEPLOY-FULL.md`: avisos sobre a resolução do relógio do host
   (o campo de nanossegundos do Nível 3 é sempre zero em hosts com relógio
   de microssegundo) e sobre relógio do sistema atrasado, no UUIDv7 e nas
@@ -208,7 +220,7 @@ decididas — entre elas a troca da fonte de entropia do gerador padrão.
   de um nó fornecido pelo chamador é responsabilidade dele.
 - `CLAUDE.md` atualizado: raiz com `CHANGELOG.md` e `.github/`, comandos
   de CI e de fuzzing, o piso de relógio por sequência, `Scan` com texto
-  vazio e a regra sobre as travas de alocação sob `-race`.
+  vazio e a regra sobre as travas de alocação sob o detector de corrida.
 - `docs/git.md` virou `docs/RELEASE.md`: guia de release executável do
   início ao fim (pré-requisitos, tag anotada, `gh release`, verificação
   pelo proxy de módulos e a regra de imutabilidade das tags com o motivo),
@@ -237,6 +249,49 @@ decididas — entre elas a troca da fonte de entropia do gerador padrão.
   leitura para release e contribuição. `README.md`: links para
   `CONTRIBUTING.md` e `SECURITY.md`. `CLAUDE.md`: exceções da raiz,
   comandos de linter e cobertura, descrição dos três jobs do CI.
+- `docs/TEST-AND-BENCHMARK.md`: tabela comparando o gerador padrão antes
+  e depois da troca da fonte de entropia, com o comando exato e a leitura
+  dos números. `docs/DEPLOY-FULL.md`, `docs/SPEC.md` §7,
+  `docs/MIGRATION.md` §5, `STARTHERE.md` §3 e `CLAUDE.md`: as três
+  adições de API e a descrição do gerador padrão.
+
+### Decisões
+
+- **Gerador monotônico opcional: recusado.** A proposta era um
+  `NewMonotonicGenerator` com contador no topo dos bits aleatórios,
+  conforme o método 1 da RFC 9562 §6.2, para dar ordem estrita dentro do
+  mesmo instante embutido. O protótipo de 2026-08-27 zerava as 44% de
+  inversões em 200.000 pares, mas custava 8,5% em série e **32 vezes**
+  em paralelo (7,40 ns para 233,6 ns com 8 núcleos), porque o contador
+  exige estado compartilhado e o laço de CAS degrada sob contenção. Uma
+  biblioteca cuja razão de ser é gerar milhões de identificadores por
+  segundo não deve carregar um caminho com esse perfil, nem a
+  complexidade de decidir layout de bits por nível, política de estouro e
+  interação com `ImportBinary` — que é cego quanto ao nível e leria o
+  contador como microssegundos ou nanossegundos. Quem precisa de ordem
+  estrita dentro do processo tem alternativas fora da biblioteca (um
+  contador próprio ao lado do UUID, ou a versão 6, que já é estritamente
+  crescente por construção). A ordenação continua cronológica na
+  resolução do nível, com desempate aleatório, como `CLAUDE.md` e
+  `docs/SPEC.md` documentam.
+- **Relógio injetável no `Generator`: recusado.** A proposta era permitir
+  fixar o instante de fora do pacote, para escrever vetores dourados de
+  `Generate` de ponta a ponta. A motivação original — a falta de teste de
+  regressão para o relógio pré-1970 — já tinha sido resolvida pelo teste
+  interno de `splitUnixInstant` em `clock_internal_test.go`, e o layout
+  de bits já está travado por `TestLayoutZeroEntropy` e
+  `TestLayoutFullEntropy`. O que sobrava era um campo de função no
+  caminho quente, com risco de impedir o inline, em troca de cobertura
+  que o conjunto atual de testes já dá por outro caminho. `Generate`
+  continua chamando `time.Now()` diretamente.
+- **`v1.0.0` adiada.** A biblioteca fica na linha `v0.x` por enquanto. A
+  `v0.4.0` mudou o gerador padrão e ampliou a API; um compromisso de
+  estabilidade faz sentido depois que essas mudanças tiverem uso real,
+  não no mesmo ciclo em que foram feitas. Quando for o caso, a `v1`
+  precisa vir com a revisão da superfície pública inteira (inclusive
+  `Nil` e `Max` como variáveis mutáveis, e os tipos de retorno `byte` de
+  `Version` e `Variant`) e com a política de compatibilidade publicada em
+  `README.md`.
 
 ---
 
@@ -464,36 +519,11 @@ Primeira versão publicada.
 
 ## Propostas em aberto
 
-Itens levantados nas revisões de 2026-08-27, ainda sem decisão. Nenhum
-é defeito; todos mudam projeto ou ampliam a superfície pública. As
-medições citadas foram feitas em Apple M2, Go 1.27, e não foram
-refeitas depois.
-
-- **Trocar o `sync.Pool` de PCG pelo gerador global de `math/rand/v2`.**
-  Desde o Go 1.22 as funções de pacote usam `runtime.rand()`, por thread
-  e sem trava; a medição isolada da fonte de entropia deu 4,49 ns contra
-  7,85 ns em série e 0,91 ns contra 2,75 ns em paralelo. O gerador do
-  runtime é ChaCha8 semeado pelo sistema, o que também reduziria a
-  previsibilidade do gerador padrão, e eliminaria as releituras de
-  `crypto/rand` quando o GC esvazia o pool. É decisão de arquitetura: o
-  desenho atual está descrito em `CLAUDE.md` como característica do
-  projeto e precisa de benchmark próprio antes de mudar.
-- **Gerador monotônico opcional** (`NewMonotonicGenerator`), com contador
-  de 16 bits no topo dos bits aleatórios do Nível 3 e estado
-  compartilhado atômico, conforme o método 1 da RFC 9562 §6.2. Zera as
-  regressões de ordenação dentro do mesmo instante ao custo de 8,5% em
-  série e 32 vezes em paralelo. Só faz sentido como construtor
-  dedicado, nunca como padrão.
-- **Relógio injetável no `Generator`** para vetores dourados de tempo.
-  A motivação original, a falta de teste para o relógio pré-1970, já
-  foi resolvida pelo teste interno de `splitUnixInstant` na raiz; resta
-  apenas o valor de testar `Generate` de ponta a ponta com instante
-  fixo.
-- **Adições de API** ainda não feitas: `AppendTo(dst []byte) []byte`
-  (escrita no buffer do chamador, medida 29% mais rápida que `String` e
-  sem alocação), `Bytes() []byte` e `IsValid() bool`. As demais da
-  lista original (`MarshalText`, JSON, `database/sql`, `Compare`,
-  `FromBytes`, `IsZero`, `TimestampWithLevel`) entraram na `v0.3.0`.
+Nenhuma. As quatro propostas levantadas nas revisões de 2026-08-27 foram
+decididas em 2026-09-11: a troca da fonte de entropia e as três adições
+de API foram feitas (veja a seção "Não publicado"); o gerador monotônico
+e o relógio injetável foram recusados, com os motivos registrados em
+"Decisões" abaixo.
 
 [Não publicado]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.3.0...HEAD
 [v0.3.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.2.0...v0.3.0

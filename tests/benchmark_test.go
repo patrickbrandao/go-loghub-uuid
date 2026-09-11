@@ -65,6 +65,31 @@ func BenchmarkGenerateLevel3Parallel(b *testing.B) {
 	})
 }
 
+// BenchmarkString mede a serialização canônica de um UUID já pronto. É a
+// referência contra a qual BenchmarkAppendTo deve ser lido: as duas
+// produzem os mesmos 36 bytes, mas String aloca a string devolvida.
+func BenchmarkString(b *testing.B) {
+	u := uuid.Generate(uuid.Level3)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkS = u.String()
+	}
+}
+
+// BenchmarkAppendTo mede a mesma serialização escrita no buffer do
+// chamador, sem a alocação da string.
+func BenchmarkAppendTo(b *testing.B) {
+	u := uuid.Generate(uuid.Level3)
+	buf := make([]byte, 0, 64)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		buf = u.AppendTo(buf[:0])
+	}
+	runtime.KeepAlive(buf)
+}
+
 // BenchmarkFromString mede o caminho de análise da string canônica —
 // o único que recebe dado externo, e por isso o que mais importa manter
 // rápido e sem alocações.
