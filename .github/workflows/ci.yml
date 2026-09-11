@@ -59,12 +59,18 @@ jobs:
         # última versão estável publicada.
         go: ["1.22", "stable"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
           check-latest: true
+          # A biblioteca nao tem dependencias, logo nao ha go.sum e nao ha
+          # o que cachear. Sem isto a acao avisa "Dependencies file is not
+          # found" em toda execucao, e um log cheio de avisos inofensivos
+          # e como um aviso real passa despercebido. Criar um go.sum vazio
+          # so para calar o aviso seria um arquivo mentiroso.
+          cache: false
 
       - name: Versão do Go em uso
         run: go version
@@ -138,7 +144,7 @@ jobs:
 
       - name: Relatório de cobertura (artefato)
         if: matrix.go == 'stable'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cobertura
           path: |
@@ -158,12 +164,14 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           check-latest: true
+          # Sem dependencias, sem go.sum, nada a cachear. Ver o job test.
+          cache: false
 
       - name: Versão do Go em uso
         run: go version
@@ -188,12 +196,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           check-latest: true
+          # Sem dependencias, sem go.sum, nada a cachear. Ver o job test.
+          cache: false
 
       - name: Suíte completa (inclui massa de 1.000.000) com detector de corrida
         run: go test ./... -race -v -timeout 20m
@@ -223,7 +233,7 @@ jobs:
         # runner. O procedimento de reprodução está em
         # docs/TEST-AND-BENCHMARK.md.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-corpus
           path: tests/testdata/fuzz/

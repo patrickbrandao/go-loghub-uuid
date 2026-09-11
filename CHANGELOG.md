@@ -164,6 +164,39 @@ Convenções de cada seção:
   nenhum caminho anterior foi tocado: quem atualiza da `v0.4.0` não
   precisa mudar nada.
 
+### Infraestrutura
+
+- **`.github/workflows/ci.yml`: ações atualizadas e aviso de cache
+  silenciado pela causa.** A execução em `ea6eb0f` passava nos dois jobs
+  mas emitia dois avisos em toda rodada.
+
+  O primeiro era a descontinuação do Node 20: `actions/checkout@v4`,
+  `actions/setup-go@v5` e `actions/upload-artifact@v4` ainda pediam Node
+  20 e o GitHub as forçava em Node 24. Quando esse apoio for retirado as
+  ações param, e como `docs/RELEASE.md` proíbe etiquetar sem o job `test`
+  verde, um CI quebrado bloquearia a publicação de versão. As três
+  subiram para `@v7`, cuja `action.yml` declara `using: node24`,
+  conferida no repositório de cada ação. `golangci/golangci-lint-action`
+  já estava em `@v9`, que resolve para a v9.3.0, também em Node 24.
+
+  As três só usam entradas estáveis: `checkout` não recebe nenhuma,
+  `setup-go` recebe `go-version` e `check-latest`, `upload-artifact`
+  recebe `name` e `path`. Todas continuam existindo nas versões novas. A
+  única mudança de comportamento da `checkout@v7` é bloquear o checkout
+  de fork em `pull_request_target` e `workflow_run`, e este fluxo usa
+  `pull_request`.
+
+  O segundo aviso era o cache sem arquivo de dependências, consequência
+  direta de a biblioteca não ter nenhuma. `setup-go` passou a receber
+  `cache: false` nos três jobs, que é o correto para um módulo sem
+  dependências: não há o que cachear e o passo deixa de tentar. Criar um
+  `go.sum` vazio só para calar o aviso seria um arquivo mentiroso. Um log
+  cheio de avisos inofensivos é como um aviso real passa despercebido.
+
+  **Falta exercitar.** Os jobs `test-os` e `deep` não rodam em push para
+  `main`, então precisam de `workflow_dispatch` para serem verificados
+  com as versões novas.
+
 ### Corrigido
 
 - **A explicação de como o pacote `github.com/google/uuid` repete um
