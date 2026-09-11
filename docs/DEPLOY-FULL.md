@@ -487,6 +487,28 @@ especiais válidos apesar de não carregarem versão nem variante; use
 um UUIDv4 vindo de outro sistema também é válido. Para exigir a versão
 7, compare `u.Version()` com `7`.
 
+### Ordenar uma lista
+
+`UUIDs` não implementa `sort.Interface`, e não vai implementar. A
+biblioteca padrão já resolve isso melhor, com o `Compare` que esta
+biblioteca oferece usado direto como função de comparação:
+
+```go
+import "slices"
+
+lista := uuid.UUIDs{c, a, b}
+slices.SortFunc(lista, uuid.UUID.Compare)
+```
+
+`uuid.UUID.Compare` aqui é uma expressão de método: vale
+`func(uuid.UUID, uuid.UUID) int`, que é exatamente a assinatura que
+`slices.SortFunc` espera. Uma linha, sem alocação, sem comparador
+escrito à mão.
+
+Para UUIDv7 e UUIDv6 essa ordem é cronológica, porque coincide com a
+ordem dos bytes. Para ordenar pelo texto o resultado é o mesmo: a ordem
+lexicográfica das strings canônicas acompanha a dos bytes.
+
 `Bytes` devolve uma **cópia**; `u[:]` é mais barato e não copia, mas
 aponta para o próprio valor. Use `Bytes` quando o destino guardar a
 referência. Serve também para contornar uma armadilha de formatação:

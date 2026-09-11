@@ -288,6 +288,17 @@ Convenções de cada seção:
   convidaria ao mal-entendido mais caro da API, o de usar como
   identificador único algo que colide na primeira repetição de instante.
   Registrado na seção 11.3.
+- **A lista `UUIDs` não vai implementar `sort.Interface`.** Recusado: a
+  biblioteca padrão já ordena com função de comparação desde o Go 1.21 e
+  o `go.mod` está em 1.22, então
+  `slices.SortFunc(lista, uuid.UUID.Compare)` resolve em uma linha, sem
+  alocação, reusando o `Compare` que já existe e já é testado. A
+  expressão de método vale `func(UUID, UUID) int`, que é a assinatura
+  esperada. Implementar `Len`, `Less` e `Swap` acrescentaria três
+  métodos exportados para oferecer um caminho mais verboso e mais lento
+  que o que o chamador já tem. O que faltava era documentação, não API:
+  `docs/DEPLOY-FULL.md` ganhou a seção "Ordenar uma lista". Registrado na
+  seção 11.3.
 - **A forma é `GenerateAt(nível, instante)`, e não uma família de quatro
   aridades.** A proposta original mapeava o número de argumentos no
   nível, somando dezesseis símbolos novos entre funções de pacote,
