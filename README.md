@@ -13,8 +13,12 @@ UUID** da RFC 9562 — 1, 2, 3, 4, 5, 6 e 8.
   de goroutines sem trava global.
 - **Sem dependências**: apenas a biblioteca padrão do Go.
 - **Multinível**: do milissegundo padrão até nanossegundos embutidos.
+- **Consultável por intervalo**: `MinAt`, `MaxAt` e `RangeAt` dão os
+  UUIDs que delimitam uma janela de tempo, para responder a ela com o
+  índice da própria chave primária, sem coluna nem índice de carimbo.
 - **Completa**: todas as versões da RFC 9562, análise permissiva de
-  texto, serialização em JSON e integração com `database/sql`.
+  texto, serialização em JSON e integração com `database/sql`, inclusive
+  em coluna binária de 16 bytes.
 
 ## Níveis
 
@@ -41,6 +45,34 @@ Todos preservam versão 7 e variante RFC.
 
 As versões 1, 2 e 6 compartilham um relógio interno com trava própria. O
 caminho do UUIDv7 continua sem trava alguma e sem alocações.
+
+## Consulta por intervalo de tempo
+
+É o motivo prático de usar UUIDv7 como chave primária. O índice da chave
+já está em ordem cronológica, então uma janela de tempo vira varredura de
+faixa:
+
+```go
+lo, hi := uuid.RangeAt(uuid.Level2, inicio, fim)
+
+rows, err := db.Query(
+	"SELECT id, corpo FROM eventos WHERE id >= $1 AND id < $2 ORDER BY id",
+	lo.String(), hi.String(),
+)
+```
+
+`RangeAt` devolve o intervalo semiaberto `[inicio, fim)`. Para as
+fronteiras separadas, `MinAt` e `MaxAt`. As três respeitam o nível: no
+Nível 2 o campo `rand_a` carrega os microssegundos reais do instante, e
+zerá-lo daria uma fronteira errada.
+
+Para gravar a chave de um instante conhecido, ao reprocessar um
+histórico, `GenerateAt(nível, instante)` gera com o tempo que você
+informa, preservando a ordenação da chave.
+
+> A fronteira só vale para UUIDs gravados no **mesmo nível**. Misturar
+> níveis na mesma coluna faz a consulta devolver linhas a menos, sem erro
+> nenhum. Detalhes em [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md).
 
 ## Instalação
 

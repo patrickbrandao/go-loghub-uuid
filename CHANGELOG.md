@@ -227,6 +227,15 @@ Convenções de cada seção:
 
 ### Documentação
 
+- **`README.md` e `docs/DEPLOY-FAST.md` passaram a citar as APIs novas.**
+  A consulta por intervalo é o argumento prático para adotar UUIDv7 como
+  chave primária, e não aparecia em nenhuma das duas portas de entrada do
+  projeto: quem chegava pelo README não via a única capacidade que as
+  bibliotecas concorrentes não têm. O README ganhou um item na lista de
+  recursos e uma seção com a consulta SQL; o guia rápido ganhou duas
+  seções curtas, uma de consulta por faixa e outra de geração por
+  instante ao importar histórico. As duas repetem o aviso sobre misturar
+  níveis na mesma coluna.
 - **`tests/compare/`, módulo aninhado que prova em código a diferença de
   comportamento com o pacote `github.com/google/uuid`.** As afirmações
   comparativas do projeto eram todas qualitativas, e uma delas, sobre

@@ -61,7 +61,38 @@ func handler() string {
 O mesmo `*Generator` pode ser chamado por centenas de goroutines ao mesmo
 tempo, sem trava global.
 
+## 5. Consultar por intervalo de tempo
+
+A chave já está em ordem cronológica, então a janela de tempo vira
+varredura de faixa no índice primário, sem coluna de carimbo:
+
+```go
+lo, hi := uuid.RangeAt(uuid.Level3, inicio, fim) // intervalo [inicio, fim)
+
+rows, err := db.Query(
+	"SELECT id, corpo FROM eventos WHERE id >= $1 AND id < $2 ORDER BY id",
+	lo.String(), hi.String(),
+)
+```
+
+Use **o mesmo nível** com que os identificadores foram gravados. Níveis
+misturados na mesma coluna fazem a consulta devolver linhas a menos, sem
+erro nenhum.
+
+## 6. Gerar para um instante que você já tem
+
+Ao importar registros antigos, gerar a chave com o instante original
+mantém o índice em ordem cronológica, como se tivessem sido gravados na
+época:
+
+```go
+id := uuid.GenerateAtString(uuid.Level2, registro.CriadoEm)
+```
+
+Com `Generate`, todos os registros importados receberiam o carimbo do
+momento da importação.
+
 ---
 
-Para todas as funções (binário, conversões, importação de tempo), veja
-[DEPLOY-FULL.md](DEPLOY-FULL.md).
+Para todas as funções (binário, conversões, importação de tempo, coluna
+binária de 16 bytes), veja [DEPLOY-FULL.md](DEPLOY-FULL.md).
