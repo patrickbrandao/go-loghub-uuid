@@ -391,11 +391,26 @@ A geração de UUIDs baseados em tempo requer sincronização segura:
      estar atrás do tempo acumulado por adiantamento, gerando colisões de
      identificadores.
 3. **Piso de Relógio por Sequência (Troca de Sequência sem Repetição)**:
-   - Zerar o piso do relógio em **qualquer** troca de sequência (como faz
-     o pacote `google/uuid`) também repete UUIDs: com a sequência `A`
-     adiantada até o instante 1000, trocar para `B` (piso zerado, relógio
-     real em 900) e voltar para `A` faz `A` emitir de novo instantes que
-     já emitiu.
+   - Zerar o piso do relógio em **qualquer** troca de sequência também
+     repete UUIDs, porque o piso é a única proteção contra reemitir um
+     instante: com ele zerado, duas gerações que caiam no mesmo tique de
+     100 ns com a mesma sequência devolvem o mesmo instante e, com o
+     mesmo nó, o mesmo UUID. Basta o chamador trocar de sequência e
+     voltar entre as duas gerações.
+   - Isso não é hipótese. O pacote `github.com/google/uuid` v1.6.0 zera
+     o piso sempre que a sequência muda de valor, e a repetição foi
+     **medida** em `tests/compare`: cerca de 7% das tentativas do
+     roteiro acima, num Apple M2.
+   - **Atenção ao mecanismo, que é fácil de descrever errado.** A
+     repetição vem da janela do mesmo tique, **não** de adiantamento
+     acumulado. Uma implementação que zera o piso normalmente não
+     adianta o relógio: quando o instante não avança, ela incrementa a
+     sequência em vez de avançar o tempo, e assim nunca fica adiantada.
+     São escolhas que andam juntas. Já uma implementação que **adianta**
+     o relógio, como esta (item 2 da seção 4.2 e o adiantamento descrito
+     adiante), não pode zerar o piso de jeito nenhum: ali a janela de
+     repetição deixaria de ser um tique e passaria a ser todo o
+     adiantamento acumulado.
    - **Invariante obrigatória**: para cada sequência de relógio, os
      instantes emitidos com ela são **estritamente crescentes durante
      toda a vida do processo**. Como o par (instante, sequência) nunca se

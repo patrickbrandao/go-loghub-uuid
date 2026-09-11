@@ -199,6 +199,50 @@ mesma árvore que o Go usa localmente: `<Alvo>/<hash>`. Para reproduzir:
 
 ---
 
+## 1.1 Comparação com o pacote github.com/google/uuid
+
+`tests/compare/` é um **módulo aninhado**, com `go.mod` próprio. Ele
+existe para provar em código a diferença de comportamento que a
+documentação afirma, e a dependência de terceiros fica contida ali: o
+`go test ./...` da raiz não desce em módulos aninhados, e o `go.mod` da
+raiz continua sem nenhum `require`, sem `go.sum`.
+
+```bash
+cd tests/compare && go test -v ./...
+```
+
+Confira a quarentena a qualquer momento, da raiz:
+
+```bash
+go list -m all
+```
+
+A saída tem de ser uma linha só, o próprio módulo.
+
+O escopo é **comportamento, não velocidade**. Há três testes:
+
+- `TestGoogleRepeatsV1OnSequenceReturn` reproduz a repetição de UUIDv1
+  do outro pacote quando o chamador sai de uma sequência de relógio e
+  volta. Medido em cerca de 7% das tentativas num Apple M2. O mecanismo
+  é a janela do mesmo tique de 100 ns com o piso do relógio zerado, e
+  **não** adiantamento acumulado — ver a seção 4.2 do `docs/SPEC.md`.
+- `TestLoghubDoesNotRepeatV1OnSequenceReturn` submete esta biblioteca ao
+  roteiro idêntico e exige zero repetições.
+- `TestClockAdvanceDiffersBetweenLibraries` mede as duas escolhas de
+  projeto lado a lado: o outro pacote não adianta o relógio e incrementa
+  a sequência, esta adianta o relógio e mantém a sequência.
+
+**Não há tabela de benchmark comparativo, por decisão.** Ela envelheceria
+a cada versão do pacote de terceiros, exigiria medir dois pares de fonte
+de entropia para não favorecer esta biblioteca, e o custo de manutenção
+não se paga. A decisão está em `CHANGELOG.md`.
+
+**O CI não roda este módulo** no fluxo rápido: ele precisa de rede, e o
+lançamento de uma versão nova do pacote de terceiros não pode quebrar o
+CI desta biblioteca.
+
+---
+
 ## 2. Benchmarks (estilo `go test -bench`)
 
 ```bash

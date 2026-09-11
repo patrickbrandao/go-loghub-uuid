@@ -182,6 +182,41 @@ dado precisa ser convertido na migração.
 
 ---
 
+## 4.1 A diferença de relógio, provada em código
+
+As duas bibliotecas resolvem de formas opostas o problema de gerar mais
+de um UUIDv1 dentro do mesmo tique de 100 nanossegundos:
+
+| | `github.com/google/uuid` | esta biblioteca |
+|:---|:---|:---|
+| Quando o instante não avança | incrementa a sequência de relógio | avança o instante um tique |
+| Adiantamento sobre o relógio de parede | nenhum | cresce com a rajada |
+| Sequência durante uma rajada | muda sozinha | é a que o chamador escolheu |
+| Piso do relógio ao trocar de sequência | zerado | guardado por sequência |
+
+As duas são permitidas pela RFC 9562. A consequência prática que importa
+na migração: **lá a sequência muda sozinha debaixo do seu código durante
+uma rajada**, e aqui o instante embutido se adianta do relógio de parede.
+
+Há também uma diferença de unicidade. Como o pacote do Google zera o
+piso do relógio sempre que a sequência muda de valor, um código que
+troque de sequência e volte entre duas gerações pode reemitir o mesmo
+UUIDv1. Isso está **medido**, não afirmado: `tests/compare` reproduz a
+repetição em cerca de 7% das tentativas num Apple M2, e mostra que o
+mesmo roteiro aqui não repete nenhuma vez.
+
+O cenário exige trocar de sequência à mão entre gerações, o que quase
+ninguém faz. Se o seu código chama `SetClockSequence`, vale conferir.
+
+O módulo `tests/compare/` tem `go.mod` próprio justamente para que a
+raiz continue sem nenhuma dependência:
+
+```bash
+cd tests/compare && go test -v ./...
+```
+
+---
+
 ## 5. O que esta biblioteca tem a mais
 
 - **Três níveis de precisão no UUIDv7**: `Level2` grava microssegundos e

@@ -164,8 +164,56 @@ Convenções de cada seção:
   nenhum caminho anterior foi tocado: quem atualiza da `v0.4.0` não
   precisa mudar nada.
 
+### Corrigido
+
+- **A explicação de como o pacote `github.com/google/uuid` repete um
+  UUIDv1 estava errada**, em `docs/SPEC.md` seção 4.2 e no `CLAUDE.md`.
+  O texto dizia que a repetição vinha de **adiantamento acumulado**: uma
+  sequência adiantada até um instante futuro, trocada e retomada com o
+  piso zerado, reemitiria instantes que já usou.
+
+  O pacote do Google **não adianta o relógio**. Quando o instante não
+  avança, ele incrementa a sequência de 14 bits e mantém o instante de
+  parede, então nenhuma sequência fica adiantada e o cenário descrito
+  não pode ocorrer lá. Medido: 200 mil gerações seguidas deixam o
+  adiantamento em zero e movem a sequência de 2570 para 12379.
+
+  **A conclusão estava certa, o mecanismo não.** A repetição existe e foi
+  medida em cerca de 7% das tentativas, mas por outra via: o piso do
+  relógio é a única proteção contra reemitir um instante, e zerá-lo na
+  troca de sequência desarma essa proteção. Duas gerações que caiam no
+  mesmo tique de 100 nanossegundos, com a mesma sequência, devolvem o
+  mesmo instante e o mesmo UUID.
+
+  As duas escolhas andam juntas e a distinção importa: quem zera o piso
+  normalmente não adianta o relógio. É justamente por **esta** biblioteca
+  adiantar que zerar o piso aqui seria muito pior do que é lá — a janela
+  deixaria de ser um tique e passaria a ser todo o adiantamento
+  acumulado. A especificação agora diz isso, com um aviso explícito de
+  que o mecanismo é fácil de descrever errado.
+
 ### Documentação
 
+- **`tests/compare/`, módulo aninhado que prova em código a diferença de
+  comportamento com o pacote `github.com/google/uuid`.** As afirmações
+  comparativas do projeto eram todas qualitativas, e uma delas, sobre
+  software alheio e usada como diferencial, estava com o mecanismo
+  errado (ver Corrigido). Agora há três testes: a repetição de UUIDv1 do
+  outro pacote ao sair de uma sequência de relógio e voltar, a ausência
+  dela aqui sob o roteiro idêntico, e a medição lado a lado das duas
+  escolhas de avanço de relógio.
+
+  A ausência de dependências é característica do projeto, então a
+  dependência fica em quarentena num `go.mod` próprio: `go test ./...` na
+  raiz não desce em módulos aninhados, `go list -m all` na raiz continua
+  imprimindo uma linha só e não há `go.sum` na raiz. O CI rápido não roda
+  este módulo, porque ele precisa de rede e o lançamento de uma versão do
+  pacote de terceiros não pode quebrar o CI desta biblioteca.
+
+  **Sem tabela de benchmark comparativo, por decisão** — ver Decisões.
+  `docs/MIGRATION.md` ganhou a seção 4.1, com a tabela das duas escolhas
+  de relógio lado a lado e o aviso de conferir o código de quem chama
+  `SetClockSequence`.
 - **Registro de decisões firmadas em `docs/SPEC.md` seção 11.** As
   decisões tomadas até aqui viviam só no histórico deste arquivo, que é
   cronológico: uma auditoria que lesse a especificação encontrava o
@@ -345,6 +393,14 @@ Convenções de cada seção:
   convidaria ao mal-entendido mais caro da API, o de usar como
   identificador único algo que colide na primeira repetição de instante.
   Registrado na seção 11.3.
+- **Sem tabela de benchmark comparativo contra `github.com/google/uuid`.**
+  A metade de valor duradouro da comparação é a diferença de
+  comportamento, que é uma afirmação de correção e agora está provada em
+  código. A tabela de velocidade envelheceria a cada versão do pacote de
+  terceiros, exigiria medir dois pares de fonte de entropia para não
+  favorecer esta biblioteca por um motivo que não é mérito de projeto, e
+  o custo de manutenção recorrente não se paga. Uma tabela que só mostra
+  vitórias não é medição, é anúncio.
 - **A lista `UUIDs` não vai implementar `sort.Interface`.** Recusado: a
   biblioteca padrão já ordena com função de comparação desde o Go 1.21 e
   o `go.mod` está em 1.22, então

@@ -306,7 +306,10 @@ por string continua cronológica.
   `conversion.go` e `import.go`.
 - **Quero as outras versões**: `clock.go` primeiro (o relógio
   compartilhado), depois `version1.go`.
-- **Venho do pacote google/uuid**: [docs/MIGRATION.md](docs/MIGRATION.md)
+- **Venho do pacote google/uuid**: [docs/MIGRATION.md](docs/MIGRATION.md),
+  e `tests/compare/` para a diferença de comportamento provada em código.
+  É um módulo aninhado, com `go.mod` próprio: a raiz continua sem
+  nenhuma dependência.
 - **Vou publicar uma versão**: [docs/RELEASE.md](docs/RELEASE.md)
 - **Vou contribuir ou relatar um problema de segurança**:
   [CONTRIBUTING.md](CONTRIBUTING.md) e [SECURITY.md](SECURITY.md)
