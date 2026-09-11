@@ -162,6 +162,8 @@ uso a que a biblioteca se destina — o gerador padrão é adequado.
 - Testes e benchmark: [docs/TEST-AND-BENCHMARK.md](docs/TEST-AND-BENCHMARK.md)
 - Especificação de desenvolvimento (agnóstica de linguagem):
   [docs/SPEC.md](docs/SPEC.md)
+- Como contribuir: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Como relatar uma vulnerabilidade: [SECURITY.md](SECURITY.md)
 
 ## Licença
 
