@@ -96,6 +96,13 @@ if g, ok := u.GregorianTime(); ok {
 instante, ok := u.Timestamp()
 ```
 
+Para carimbos anteriores a 1970, `UnixTime` aqui devolve o par
+canônico, com nanossegundos em `0..999_999_999`, enquanto o pacote de
+origem devolve resto negativo: um tique antes da época sai como
+`(-1, 999_999_900)` aqui e como `(0, -100)` lá. `time.Unix` normaliza os
+dois para o mesmo instante; a diferença só aparece para quem usa `sec` e
+`nsec` diretamente.
+
 **`(UUID).ClockSequence()`, `Domain()` e `ID()` devolvem um segundo
 retorno booleano**, falso quando a versão do UUID não carrega aquele
 campo. O pacote antigo devolvia lixo em silêncio nesses casos. Para a

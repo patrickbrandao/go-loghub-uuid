@@ -633,3 +633,66 @@ func TestInspectorsRejectOtherVersions(t *testing.T) {
 		t.Errorf("v2: NodeID com %d bytes, esperado 6", len(node))
 	}
 }
+
+// TestGregorianUnixTimeBeforeEpochIsCanonical trava a conversão inversa
+// da seção 4.1 da especificação (caso obrigatório 19): o par devolvido
+// por UnixTime é canônico, com nanossegundos em 0..999_999_999, também
+// para carimbos anteriores à época Unix. É o único caso que distingue a
+// divisão euclidiana da truncada, que devolveria (0, -100) para um tique
+// antes da época; instantes posteriores a 1970 passam nas duas.
+func TestGregorianUnixTimeBeforeEpochIsCanonical(t *testing.T) {
+	const gregorianOffset = 0x01B21DD213814000
+
+	cases := []struct {
+		name string
+		g    uuid.GregorianTime
+		sec  int64
+		nsec int64
+	}{
+		{"época gregoriana de 1582", 0, -12_219_292_800, 0},
+		{"um tique antes da época Unix", gregorianOffset - 1, -1, 999_999_900},
+		{"meio segundo antes da época Unix", gregorianOffset - 5_000_000, -1, 500_000_000},
+		{"1969-07-20T20:17:40Z", gregorianOffset - 14_182_940*10_000_000, -14_182_940, 0},
+		{"época Unix", gregorianOffset, 0, 0},
+		{"um tique depois da época Unix", gregorianOffset + 1, 0, 100},
+		{"2026-01-01T00:00:00.1234567Z", 139_865_184_001_234_567, 1_767_225_600, 123_456_700},
+	}
+	for _, c := range cases {
+		sec, nsec := c.g.UnixTime()
+		if sec != c.sec || nsec != c.nsec {
+			t.Errorf("%s: UnixTime = (%d, %d), esperado (%d, %d)", c.name, sec, nsec, c.sec, c.nsec)
+		}
+		if nsec < 0 || nsec >= 1_000_000_000 {
+			t.Errorf("%s: nanossegundos %d fora da faixa canônica", c.name, nsec)
+		}
+		// O instante construído a partir do par é o de Time(), e a ida da
+		// seção 4.1 anula a volta.
+		if got, want := time.Unix(sec, nsec).UTC(), c.g.Time(); !got.Equal(want) {
+			t.Errorf("%s: time.Unix(par) = %v, Time() = %v", c.name, got, want)
+		}
+		if back := sec*10_000_000 + nsec/100 + gregorianOffset; back != int64(c.g) {
+			t.Errorf("%s: ida e volta devolveu %d, esperado %d", c.name, back, int64(c.g))
+		}
+	}
+
+	// Montados com carimbo pré-época pelos empacotamentos de referência de
+	// golden_test.go, um UUIDv1 e um UUIDv6 devolvem o mesmo instante
+	// canônico pela leitura da biblioteca.
+	const umTiqueAntes = gregorianOffset - 1
+	want := time.Date(1969, 12, 31, 23, 59, 59, 999_999_900, time.UTC)
+	for name, u := range map[string]uuid.UUID{
+		"versão 1": packV1Reference(umTiqueAntes, goldenSeq, goldenNode),
+		"versão 6": packV6Reference(umTiqueAntes, goldenSeq, goldenNode),
+	} {
+		g, ok := u.GregorianTime()
+		if !ok || int64(g) != umTiqueAntes {
+			t.Errorf("%s: GregorianTime = %d (ok %v), esperado %d", name, g, ok, int64(umTiqueAntes))
+		}
+		if sec, nsec := g.UnixTime(); sec != -1 || nsec != 999_999_900 {
+			t.Errorf("%s: UnixTime = (%d, %d), esperado (-1, 999999900)", name, sec, nsec)
+		}
+		if ts, ok := u.Timestamp(); !ok || !ts.Equal(want) {
+			t.Errorf("%s: Timestamp = %v (ok %v), esperado %v", name, ts, ok, want)
+		}
+	}
+}

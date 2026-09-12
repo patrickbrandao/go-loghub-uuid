@@ -31,11 +31,24 @@ type GregorianTime int64
 
 // UnixTime converte o instante gregoriano para a época Unix, devolvendo
 // segundos e a fração em nanossegundos.
+//
+// O par devolvido é canônico: nsec fica sempre em 0..999_999_999, também
+// para instantes anteriores a 1970, que existem no campo (ele começa em
+// 1582). A divisão é euclidiana, com resto não negativo, e não a truncada
+// da linguagem: com a truncada um tique antes da época sairia como
+// (0, -100) em vez de (-1, 999_999_900). time.Unix normalizaria os dois
+// para o mesmo instante, mas quem consome sec e nsec diretamente não
+// deve receber resto negativo. A resolução é a do campo, 100 ns: os dois
+// dígitos finais de nsec são sempre zero. Ver docs/SPEC.md seção 4.1.
 func (t GregorianTime) UnixTime() (sec, nsec int64) {
-	sec = int64(t) - gregorian100ns
-	nsec = (sec % 10_000_000) * 100
-	sec /= 10_000_000
-	return sec, nsec
+	ticks := int64(t) - gregorian100ns
+	sec = ticks / 10_000_000
+	rem := ticks % 10_000_000
+	if rem < 0 {
+		rem += 10_000_000
+		sec--
+	}
+	return sec, rem * 100
 }
 
 // Time devolve o instante como time.Time em UTC.

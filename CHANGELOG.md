@@ -197,6 +197,25 @@ Convenções de cada seção:
   `main`, então precisam de `workflow_dispatch` para serem verificados
   com as versões novas.
 
+### Alterado
+
+- **`GregorianTime.UnixTime` em `clock.go` devolve o par canônico
+  também antes de 1970.** A conversão usava divisão truncada, como o
+  pacote `github.com/google/uuid`, e para carimbos anteriores à época
+  Unix devolvia resto negativo: um tique antes da época saía como
+  `(0, -100)` em vez de `(-1, 999999900)`. O instante devolvido por
+  `Time()` já era correto, porque `time.Unix` normaliza componentes
+  negativas, mas o método é público e quem consumia `sec` e `nsec`
+  diretamente recebia um par não canônico. A divisão passou a ser
+  euclidiana, com resto sempre não negativo; custa uma comparação, fora
+  do caminho quente, e `Time()` devolve exatamente o mesmo instante de
+  antes para todo o campo de 60 bits, o que está travado por teste. A
+  única saída que muda é a de `UnixTime` para carimbos pré-1970. Veio da
+  auditoria de suficiência da especificação (ver Documentação): a volta
+  de gregoriano para Unix não estava escrita em lugar nenhum, e a forma
+  escolhida para o texto normativo é a que não depende de a
+  linguagem-alvo normalizar. `docs/MIGRATION.md` registra a diferença.
+
 ### Corrigido
 
 - **A explicação de como o pacote `github.com/google/uuid` repete um
