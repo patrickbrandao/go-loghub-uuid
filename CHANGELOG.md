@@ -25,7 +25,70 @@ Nada ainda.
 
 ## [v0.5.0] — 2026-09-12
 
+Ciclo de 2026-09-11 a 2026-09-12 sobre a `v0.4.0`, agrupado em uma única
+versão. O UUIDv7 ganhou as fronteiras de tempo para consulta por
+intervalo (`MinAt`, `MaxAt`, `RangeAt`), a geração por instante explícito
+(`GenerateAt`, `GenerateAtString`) e os nomes por versão e por nível
+(`GenerateV7`, `GenerateV7Level1` a `GenerateV7Level3`); a integração com
+banco ganhou a escrita binária de 16 bytes (`BinaryUUID`,
+`NullBinaryUUID`) e o anexador binário (`AppendBinary`). A conversão
+gregoriana inversa passou a devolver o par canônico e a saturar em vez de
+estourar. A especificação fechou as nove lacunas da auditoria de
+suficiência e ganhou o registro de decisões firmadas; a suíte ganhou os
+vetores dourados das versões 1, 2 e 6, dois alvos de fuzzing para a
+aritmética temporal, a comparação em código com `github.com/google/uuid`
+e os testes dos ramos que faltavam, com a cobertura em 99,6%. A API é
+aditiva; a única saída que muda é a de `GregorianTime.UnixTime` para
+carimbos anteriores a 1970, descrita em "Alterado".
+
 ### Adicionado
+
+- **`GenerateV7`, `GenerateV7Level1`, `GenerateV7Level2` e
+  `GenerateV7Level3` em `version7.go`: o UUIDv7 pelo nome da versão e
+  pelo nome do nível.** Todas as outras versões tinham função própria,
+  de `GenerateV1` a `GenerateV8`, e o UUIDv7 comum da RFC 9562 só era
+  pedido por `Generate(Level1)`. Isso quebrava o padrão de nomes da
+  própria biblioteca, e quem procurava a função por versão concluía que
+  ela não existia. `GenerateV7` existe como método do `Generator` e como
+  função de pacote, no mesmo par de `GenerateV4`, e é exatamente
+  `Generate(Level1)`: precisão de milissegundo, 74 bits de entropia,
+  duas palavras sorteadas, zero alocações.
+
+  Os três níveis ganharam o mesmo tratamento: `GenerateV7Level1`,
+  `GenerateV7Level2` e `GenerateV7Level3` são exatamente `Generate` com
+  o nível correspondente, também como métodos e funções de pacote, sem o
+  argumento de nível. O nome por versão sozinho privilegiava o Nível 1 e
+  deixava os outros dois por constante, e o nível é contrato de toda a
+  coluna — as fronteiras de `MinAt`/`MaxAt` e a leitura de
+  `TimestampWithLevel` precisam do mesmo nível da geração —, então vale
+  tê-lo legível no ponto da chamada. `GenerateV7Level1` repete
+  `GenerateV7` de propósito, para a família ser completa. Nenhum recebe
+  parâmetro e nenhum tem forma em texto, porque nenhuma função por
+  versão tem; `GenerateString(nível)` ou `String()` cobrem. A constante
+  continua sendo a única forma de dizer o nível como valor, que é o que
+  `Generate`, `GenerateAt`, `MinAt` e `TimestampWithLevel` recebem.
+
+  O caminho quente não mudou: cada nome é uma linha que o compilador
+  embute (`go build -gcflags=-m` confirma as oito formas), e cada
+  benchmark de nome mede o mesmo que o do nível — 45,8 ns em
+  `GenerateV7` e 45,9 ns em `GenerateV7Level1` contra 45,0 ns no
+  `Generate(Level1)`, 41,6 ns contra 40,5 ns no Nível 2 e 43,3 ns contra
+  41,5 ns no Nível 3, medianas de três execuções nesta sessão (Apple M2,
+  Go 1.27), sem alocação; as diferenças são o ruído entre execuções, e o
+  `Generate(Level3)` puro oscilou de 41,0 a 46,5 ns na mesma rodada.
+  Coberto por `TestGenerateV7IsLevel1` (com entropia constante, `rand_a`
+  e o topo de `rand_b` saem inteiros da fonte e o carimbo é o do
+  relógio) e por `TestGenerateV7LevelNamesMatchLevels`, que lê de volta
+  o instante de cada nome no nível declarado, regera por instante e
+  exige os 16 bytes idênticos, o que pega um nome ligado ao nível errado
+  — verificado sabotando os três nomes de propósito antes do commit;
+  mais a contagem de sorteios (duas palavras no nome por versão e no
+  Nível 1, uma nos níveis 2 e 3), a trava de alocação, o gerador
+  criptográfico, a tolerância ao gerador de valor zero e os atalhos de
+  pacote. A cobertura total segue em 99,6%, com os mesmos três ramos de
+  `crypto/rand` como únicas exceções. Registrado em `docs/SPEC.md`
+  seções 1, 3.1, 10 (casos 1, 4, 15 e 16) e 11.3, e nos exemplos
+  `ExampleGenerateV7` e `ExampleGenerateV7Level3` do pkg.go.dev.
 
 - **`BinaryUUID` e `NullBinaryUUID` em `sql.go`: escrita em coluna
   binária de 16 bytes.** A integração com `database/sql` era
@@ -55,6 +118,19 @@ Nada ainda.
   nulo são coisas diferentes e viram a mesma linha se forem confundidas.
   `NullBinaryUUID` com `Valid` falso grava `NULL`; dezesseis bytes
   zerados só saem com `Valid` verdadeiro e o UUID igual a `Nil`.
+
+  **Os dois tipos participam da serialização como os tipos padrão.**
+  `BinaryUUID` implementa `MarshalText`, `UnmarshalText`,
+  `MarshalBinary` e `UnmarshalBinary`, delegando para `UUID`;
+  `NullBinaryUUID` implementa `MarshalJSON`, `UnmarshalJSON`,
+  `MarshalText`, `UnmarshalText`, `MarshalBinary` e `UnmarshalBinary`,
+  delegando para `NullUUID`. Sem esses métodos, `encoding/json` gravaria
+  `BinaryUUID` como vetor de 16 números e `NullBinaryUUID` como objeto
+  `{"UUID":"...","Valid":true}`, contra a regra da especificação §8, que
+  exige a string canônica e o literal `null` para ausência. A lacuna foi
+  encontrada e fechada antes de a versão ser etiquetada, então nenhuma
+  versão publicada gravou esses formatos; `Value` não mudou.
+  (`tests/binary_serialization_test.go`)
 
 - **`GenerateAt` e `GenerateAtString` em `construct.go`: geração de
   UUIDv7 para um instante informado pelo chamador.** A biblioteca só
@@ -286,6 +362,22 @@ Nada ainda.
   linguagem-alvo normalizar. `docs/MIGRATION.md` registra a diferença.
 
 ### Corrigido
+
+- **Estouro de inteiro em `GregorianTime.UnixTime()` (`clock.go`).**
+  Valores de `GregorianTime` muito negativos — abaixo de
+  `math.MinInt64 + gregorian100ns` — causavam estouro silencioso na
+  subtração `int64(t) - gregorian100ns`, fazendo a conversão devolver
+  um instante no futuro distante (~ano 30.800) em vez de um valor
+  coerente. O campo de 60 bits dos UUIDs v1/v6 nunca produz tais
+  valores, mas um chamador externo que construa `GregorianTime` a
+  partir de dados não validados poderia atingir a condição, e o método
+  é público desde a `v0.3.0`. Adicionada a constante `minGregorianTicks`
+  e uma guarda de saturação: abaixo do limiar, o cálculo parte de
+  `math.MinInt64`, devolvendo o menor instante representável. Segue o
+  padrão de saturação já usado por `saturatedInstant` em
+  `construct.go`. O fuzzing foi reforçado com sementes de fronteira e
+  asserção contra a volta do inteiro. (`clock.go`,
+  `tests/versions_test.go`, `tests/fuzz_test.go`)
 
 - **A explicação de como o pacote `github.com/google/uuid` repete um
   UUIDv1 estava errada**, em `docs/SPEC.md` seção 4.2 e no `CLAUDE.md`.
@@ -585,6 +677,30 @@ Nada ainda.
   enquanto o arquivo já guardava a máquina de estados do piso por
   sequência, e agora guarda também a inicialização tardia. O texto passa
   a listar os três motivos de o arquivo viver na raiz.
+- **`docs/SPEC.md` §8**: regra normativa acrescentada — o tipo de
+  escrita binária e seu equivalente anulável DEVEM implementar as mesmas
+  interfaces de serialização que os tipos padrão.
+- **`docs/SPEC.md` §4.1**: parágrafo "Armadilha de estouro" acrescentado
+  à conversão inversa — a implementação DEVE saturar entradas abaixo de
+  `MinInt64 + gregorianOffset` em vez de deixar a subtração girar o
+  inteiro com sinal para o futuro distante.
+- **`docs/SPEC.md` §10 caso 2**: fuzzing da conversão gregoriana inversa
+  agora DEVE também detectar estouro e semear o limiar exato de
+  saturação e sua vizinhança.
+- **`docs/SPEC.md` §11.3**: decisão de projeto registrada — saturação na
+  conversão gregoriana inversa para entradas fora do domínio do campo.
+- **`STARTHERE.md`**: descrição de `BinaryUUID` e `NullBinaryUUID`
+  expandida para mencionar explicitamente os métodos de serialização.
+- **Os nomes do UUIDv7 citados onde as funções por versão são
+  listadas**: `README.md` (tabela de versões e aviso de segurança),
+  `STARTHERE.md` (árvore de arquivos e API), `SECURITY.md`, `CLAUDE.md`,
+  `docs/DEPLOY-FAST.md`, `docs/DEPLOY-FULL.md` (seção "Pelo nome da
+  versão e pelo nome do nível"), `docs/MIGRATION.md` e
+  `docs/TEST-AND-BENCHMARK.md`; o comentário de `NewV7` em `compat.go`
+  passa a apontar para eles.
+- O comentário de cabeçalho de `.github/workflows/ci.yml` passou a dizer
+  cinco alvos de fuzzing, que é o que o job `deep` roda desde este
+  ciclo.
 
 ### Decisões
 
@@ -705,6 +821,18 @@ Nada ainda.
   tipo pela metade em consumidor genérico; e `AppendTo` só existe no lado
   do texto porque a formatação canônica é um cálculo, enquanto os bytes
   não são. Registrado na seção 11.3.
+- **O UUIDv7 ganha nome por versão e nomes por nível, sem parâmetro e
+  sem forma em texto.** `GenerateV7` fecha o padrão de nomes que
+  `GenerateV1` a `GenerateV8` já seguiam, e `GenerateV7Level1`,
+  `GenerateV7Level2` e `GenerateV7Level3` deixam o nível legível no
+  ponto da chamada, porque o nível é contrato de toda a coluna. Não é a
+  família de aridades recusada para `GenerateAt`: lá o nível ia na
+  contagem de argumentos e a proposta somava dezesseis símbolos com
+  variantes em texto; aqui está escrito no nome, são oito símbolos
+  embutidos pelo compilador, sem forma em texto nem variante por
+  instante, e a constante continua sendo a única forma de dizer o nível
+  como valor. Um parâmetro de nível em `GenerateV7`, nunca; um quarto
+  nome, só com um quarto nível. Registrado na seção 11.3.
 - **A revisão da superfície pública inteira e a política de
   compatibilidade continuam pendentes**, e por isso o versionamento
   segue em `v0.x`. São duas das três condições que a seção 11.3 exige
@@ -871,7 +999,7 @@ decididas — entre elas a troca da fonte de entropia do gerador padrão.
   `go tool cover -func` no log, publica `cover.out` e `cover.html` como
   artefato `cobertura` e falha abaixo de 95%. Medida em 2026-09-11:
   98,2% das instruções do pacote da raiz. (`ci.yml`)
-- **Corpus de fuzzing preservado**: no job `deep`, os três alvos rodam
+- **Corpus de fuzzing preservado**: no job `deep`, os alvos de fuzzing rodam
   sempre (`continue-on-error`), o diretório `tests/testdata/fuzz/` é
   publicado como artefato `fuzz-corpus` (30 dias) quando existe, e um
   passo final falha o job se alguma campanha tiver falhado. Antes, a
