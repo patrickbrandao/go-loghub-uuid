@@ -74,6 +74,31 @@ func TestGenerateV4ZeroAllocations(t *testing.T) {
 	}
 }
 
+// TestGenerateV7ZeroAllocations estende a trava aos nomes do UUIDv7, por
+// versão e por nível, que precisam custar o mesmo que Generate no nível
+// correspondente: nenhuma alocação, porque são apelidos que o compilador
+// embute, e não caminhos próprios.
+func TestGenerateV7ZeroAllocations(t *testing.T) {
+	g := uuid.NewGenerator()
+	names := []struct {
+		name string
+		gen  func(*uuid.Generator) uuid.UUID
+	}{
+		{"GenerateV7", (*uuid.Generator).GenerateV7},
+		{"GenerateV7Level1", (*uuid.Generator).GenerateV7Level1},
+		{"GenerateV7Level2", (*uuid.Generator).GenerateV7Level2},
+		{"GenerateV7Level3", (*uuid.Generator).GenerateV7Level3},
+	}
+	for _, n := range names {
+		allocs := testing.AllocsPerRun(1_000, func() {
+			sinkU = n.gen(g)
+		})
+		if allocs != 0 {
+			t.Errorf("%s: %.0f alocações por chamada, esperado 0", n.name, allocs)
+		}
+	}
+}
+
 // TestAppendToZeroAllocations trava a razão de existir de AppendTo: com
 // capacidade sobrando no buffer do chamador, a escrita não aloca nada,
 // enquanto String aloca a string devolvida em toda chamada.

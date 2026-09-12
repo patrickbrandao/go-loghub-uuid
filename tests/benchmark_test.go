@@ -223,6 +223,42 @@ func BenchmarkGenerateV4(b *testing.B) {
 	}
 }
 
+// BenchmarkGenerateV7 mede o nome por versão do UUIDv7. Deve custar o
+// mesmo que BenchmarkGenerateLevel1: é um apelido de Generate(Level1)
+// que o compilador embute, não um caminho próprio.
+func BenchmarkGenerateV7(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = g.GenerateV7()
+	}
+}
+
+// BenchmarkGenerateV7Level1, BenchmarkGenerateV7Level2 e
+// BenchmarkGenerateV7Level3 medem os nomes por nível. Cada um deve custar
+// o mesmo que BenchmarkGenerateLevel1, 2 e 3, respectivamente, pelo mesmo
+// motivo: são apelidos de Generate no nível, embutidos pelo compilador.
+
+func BenchmarkGenerateV7Level1(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = g.GenerateV7Level1()
+	}
+}
+
+func BenchmarkGenerateV7Level2(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = g.GenerateV7Level2()
+	}
+}
+
+func BenchmarkGenerateV7Level3(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sinkU = g.GenerateV7Level3()
+	}
+}
+
 func BenchmarkGenerateV5(b *testing.B) {
 	name := []byte("https://exemplo.com.br/recurso/1")
 	b.ReportAllocs()

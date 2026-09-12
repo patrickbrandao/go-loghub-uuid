@@ -7,11 +7,11 @@ package loghubuuid
 //
 // Os apelidos que produzem bits aleatórios (New, NewString, NewRandom e
 // NewV7) leem de crypto/rand, como faz o pacote de origem, e por isso são
-// mais lentos que Generate e GenerateV4 do gerador padrão. Os erros
-// devolvidos são nulos sempre que a fonte criptográfica responde; uma
-// falha de leitura, impossível a partir do Go 1.24, vira ErrEntropySource
-// em NewRandom e NewV7 e pânico em New e NewString, espelhando o pacote
-// de origem.
+// mais lentos que Generate, GenerateV7 e GenerateV4 do gerador padrão.
+// Os erros devolvidos são nulos sempre que a fonte criptográfica
+// responde; uma falha de leitura, impossível a partir do Go 1.24, vira
+// ErrEntropySource em NewRandom e NewV7 e pânico em New e NewString,
+// espelhando o pacote de origem.
 //
 // O que deliberadamente NÃO foi trazido:
 //
@@ -73,10 +73,11 @@ func NewV6() (UUID, error) { return GenerateV6(), nil }
 
 // NewV7 produz um UUID de versão 7 padrão (Level1) com entropia
 // criptográfica, como o pacote de origem. Devolve ErrEntropySource se a
-// leitura falhar. Para velocidade máxima use Generate(Level1).
+// leitura falhar. Para velocidade máxima use GenerateV7 ou
+// Generate(Level1), que leem do gerador do runtime.
 //
-// Para gravar precisão sub-milissegundo, use Generate com Level2 ou
-// Level3.
+// Para gravar precisão sub-milissegundo, use GenerateV7Level2 ou
+// GenerateV7Level3, ou Generate com Level2 ou Level3.
 func NewV7() (u UUID, err error) {
 	defer func() {
 		if p := recover(); p != nil {

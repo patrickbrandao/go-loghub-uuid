@@ -145,6 +145,37 @@ u := uuid.Generate(uuid.Level2)
 s := uuid.GenerateString(uuid.Level1)
 ```
 
+### Pelo nome da versão e pelo nome do nível
+
+O UUIDv7 padrão da RFC 9562, o Nível 1, também é pedido pelo nome da
+versão, como as demais versões da biblioteca:
+
+```go
+u := uuid.GenerateV7()          // gerador padrão do pacote
+u = g.GenerateV7()              // ou a partir do seu Generator
+```
+
+É exatamente `Generate(uuid.Level1)`: precisão de milissegundo, 74 bits
+aleatórios, zero alocações. Não recebe nível, porque o nome designa o
+UUIDv7 da RFC.
+
+Os três níveis também têm nome próprio, sem o argumento de nível, para
+que o nível escolhido fique legível no ponto da chamada:
+
+```go
+u := uuid.GenerateV7Level1()    // o mesmo que GenerateV7 e Generate(uuid.Level1)
+u = uuid.GenerateV7Level2()     // o mesmo que Generate(uuid.Level2)
+u = uuid.GenerateV7Level3()     // o mesmo que Generate(uuid.Level3)
+u = g.GenerateV7Level3()        // ou a partir do seu Generator
+```
+
+Cada um é exatamente `Generate` com o nível correspondente: mesmos
+bytes, mesmo consumo de entropia, zero alocações. O nível continua sendo
+contrato de toda a coluna: as fronteiras de `MinAt`/`MaxAt` e a leitura
+de `TimestampWithLevel` precisam do mesmo nível da geração, e é por isso
+que vale tê-lo escrito no nome. Nenhum dos nomes tem forma em texto: use
+`GenerateString(uuid.Level3)` ou `u.String()`.
+
 ---
 
 ## Converter
@@ -519,7 +550,9 @@ string canônica, não os bytes — `fmt.Printf("%x", u.Bytes())` imprime os
 ## Gerar as outras versões de UUID
 
 A biblioteca cobre todas as versões da RFC 9562. Nenhuma delas passa pelo
-caminho do UUIDv7, que continua sem trava e sem alocações.
+caminho do UUIDv7, que continua sem trava e sem alocações. A própria
+versão 7 pelo nome, `GenerateV7` e `GenerateV7Level1` a
+`GenerateV7Level3`, está na seção "Gerar" acima.
 
 ### Versão 4 — aleatória
 

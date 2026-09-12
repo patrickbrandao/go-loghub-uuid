@@ -44,7 +44,16 @@ uuid.GenerateString(uuid.Level2) // + microssegundos embutidos
 uuid.GenerateString(uuid.Level3) // + microssegundos e nanossegundos embutidos
 ```
 
-Todos os níveis produzem UUIDv7 válidos (versão 7, variante RFC).
+Todos os níveis produzem UUIDv7 válidos (versão 7, variante RFC). Os
+três também existem pelo nome, sem o argumento de nível, devolvendo o
+binário:
+
+```go
+uuid.GenerateV7()       // o UUIDv7 padrão da RFC: o mesmo que Generate(uuid.Level1)
+uuid.GenerateV7Level1() // o mesmo que GenerateV7
+uuid.GenerateV7Level2() // o mesmo que Generate(uuid.Level2)
+uuid.GenerateV7Level3() // o mesmo que Generate(uuid.Level3)
+```
 
 ## 4. Se você gera muito (recomendado em serviços)
 

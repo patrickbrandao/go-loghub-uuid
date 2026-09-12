@@ -21,12 +21,16 @@ quente) e segura para concorrência pesada, cobrindo todo o padrão
 
 1. **UUIDv7 Multinível**:
    - **Nível 1**: UUIDv7 padrão RFC 9562 com carimbo de milissegundos
-     Unix e 74 bits de entropia.
+     Unix e 74 bits de entropia. Existe também pelo nome por versão
+     (`GenerateV7`), como as versões do item 2, e pelo nome por nível
+     (`GenerateV7Level1`), que é o mesmo (seção 3.1).
    - **Nível 2**: UUIDv7 com carimbo de milissegundos e
      **microssegundos** embutidos em `rand_a` (62 bits de entropia).
+     Existe também pelo nome por nível (`GenerateV7Level2`).
    - **Nível 3**: UUIDv7 com carimbo de milissegundos,
      **microssegundos** em `rand_a` e **nanossegundos** no topo de
-     `rand_b` (52 bits de entropia).
+     `rand_b` (52 bits de entropia). Existe também pelo nome por nível
+     (`GenerateV7Level3`).
 2. **Todas as demais versões da RFC 9562**:
    - **Versão 1**: Baseada em carimbo de tempo gregoriano (100 ns desde
      1582), sequência de relógio de 14 bits e nó MAC/aleatório de 48 bits.
@@ -119,6 +123,26 @@ garantindo ordenação temporal natural por comparação byte a byte.
 | `rand_a`      | 12 bits | 52–63          | 6(b)..7 | aleatório            | microssegundos (0..999)| microssegundos (0..999)|
 | `var`         | 2 bits  | 64–65          | 8 (alto)| `0b10`               | `0b10`                 | `0b10`                 |
 | `rand_b`      | 62 bits | 66–127         | 8(b)..15| aleatório (62 bits)  | aleatório (62 bits)    | 10b ns (0..999) + 52b  |
+
+**Nome por versão e nome por nível.** O Nível 1 **DEVE** existir também
+sob o nome que as demais versões têm (`GenerateV7`), e cada um dos três
+níveis **DEVE** existir sob um nome que diga o nível (`GenerateV7Level1`,
+`GenerateV7Level2`, `GenerateV7Level3`), todos como método do gerador e
+como função de pacote, sem parâmetro de nível e sem forma em texto.
+`GenerateV7` e `GenerateV7Level1` são o mesmo. Cada nome é um apelido
+exato da geração no nível correspondente: mesmos bytes, mesmo consumo de
+entropia (seção 3.3) e mesma trava de alocação (seção 10, caso 16). O
+nome por versão designa o UUIDv7 da RFC; os nomes por nível existem para
+que o nível, que é contrato de toda a coluna (seção 3.5: fronteiras de
+níveis distintos não compõem), fique legível no ponto da chamada em vez
+de numa constante. A constante continua sendo a única forma de dizer o
+nível **como valor**, que é o que a geração por nível, a construção por
+instante e a leitura por nível recebem; os nomes são grafias fixas das
+três constantes na geração pelo relógio, e nada mais. Os apelidos **NÃO
+DEVEM** acrescentar custo ao caminho quente: a implementação permanece
+na geração por nível, e os nomes apenas a chamam. Um nome que gere em
+nível diferente do que declara é defeito, travado pelo caso 1 da seção
+10. Ver a seção 11.3.
 
 ### 3.2 Aritmética Temporal Segura (Evitando Armadilhas de Relógio)
 
@@ -414,6 +438,17 @@ anteriores à época Unix, que existem no campo: ele começa em 1582.
 A resolução devolvida é a do campo, cem nanossegundos: os dois dígitos
 decimais finais de `nsec` são sempre zero.
 
+**Armadilha de estouro.** O tipo de tempo gregoriano é um inteiro com
+sinal de 64 bits e é público: um chamador pode construí-lo a partir de
+dados externos não validados. Quando o valor é menor que
+`MinInt64 + gregorianOffset` (aproximadamente −9,10 × 10¹⁸), a
+subtração do passo 1 estoura o inteiro com sinal e produz um resultado
+positivo grande, mapeando para um instante no futuro distante (~ano
+30.800) sem qualquer erro. A implementação **DEVE** saturar: se o valor
+cai abaixo do limiar, o cálculo parte de `MinInt64`, devolvendo o menor
+instante representável em vez de girar para o futuro. Este padrão é o
+mesmo da saturação nas fronteiras da seção 3.5.
+
 **Armadilha de linguagem.** A divisão truncada em direção a zero, que é
 o padrão em C, Go, Java e Rust, produz resto **negativo** quando `ticks`
 é negativo, e portanto nanossegundos negativos: um tique antes da época
@@ -438,17 +473,6 @@ A geração de UUIDs baseados em tempo requer sincronização segura:
      biblioteca **avança o relógio interno em 1 tique (+100 ns) por
      geração**, em vez de bloquear em espera (*sleep*).
    - Isso garante ordenação estrita e unicidade absoluta mesmo em
-**Armadilha de estouro.** O tipo de tempo gregoriano é um inteiro com
-sinal de 64 bits e é público: um chamador pode construí-lo a partir de
-dados externos não validados. Quando o valor é menor que
-`MinInt64 + gregorianOffset` (aproximadamente −9,10 × 10¹⁸), a
-subtração do passo 1 estoura o inteiro com sinal e produz um resultado
-positivo grande, mapeando para um instante no futuro distante (~ano
-30.800) sem qualquer erro. A implementação **DEVE** saturar: se o valor
-cai abaixo do limiar, o cálculo parte de `MinInt64`, devolvendo o menor
-instante representável em vez de girar para o futuro. Este padrão é o
-mesmo da saturação nas fronteiras da seção 3.5.
-
      geração massiva sob lock.
 2. **Regra Anti-Repetição em `SetNodeID` (Evitando Repetição de UUID)**:
    - Uma falha comum em implementações é resetar o último instante
@@ -928,6 +952,12 @@ nas seções 3.5 e 3.6.
      rotação que algumas receitas sugerem para o UUIDv1 é desnecessária
      no UUIDv7, que já nasce ordenado, e produziria um valor ilegível
      para outras ferramentas.
+   - O tipo de escrita binária **DEVE implementar as mesmas interfaces de
+     serialização** que o tipo padrão (`MarshalText`, `UnmarshalText`,
+     `MarshalBinary`, `UnmarshalBinary`), delegando para a implementação
+     do tipo base. Sem esses métodos, `encoding/json` serializaria o
+     valor como vetor de 16 números inteiros em vez da string canônica,
+     violando a regra 1 desta seção.
    - Fornecer um tipo `NullUUID` contendo o UUID e um booleano `Valid`
      para campos de tabela que permitem valor `NULL`, e o equivalente
      para a escrita binária. O equivalente binário anulável **DEVE
@@ -956,12 +986,6 @@ nas seções 3.5 e 3.6.
      o contrário, falha na desserialização, e é por isso que a tabela é
      normativa. Entrada inválida devolve erro e deixa o booleano falso.
 3. **Valores Especiais**:
-   - O tipo de escrita binária **DEVE implementar as mesmas interfaces de
-     serialização** que o tipo padrão (`MarshalText`, `UnmarshalText`,
-     `MarshalBinary`, `UnmarshalBinary`), delegando para a implementação
-     do tipo base. Sem esses métodos, `encoding/json` serializaria o
-     valor como vetor de 16 números inteiros em vez da string canônica,
-     violando a regra 1 desta seção.
    - `Nil`: todos os 16 bytes em zero (`00000000-0000-0000-0000-000000000000`).
    - `Max`: todos os 16 bytes em `0xFF` (`ffffffff-ffff-ffff-ffff-ffffffffffff`).
    - `Compare(a, b)`: comparação byte a byte em ordem lexicográfica
@@ -994,8 +1018,23 @@ reais:
 ## 10. Casos de Teste Obrigatórios para Validação
 
 1. **Conformidade de Versão e Variante**:
-   - Validar que cada gerador (V1 a V8 e Níveis 1 a 3 de V7) define
-     exatamente sua respectiva versão e variante `0b10`.
+   - Validar que cada gerador (V1 a V8, os Níveis 1 a 3 de V7, o nome
+     por versão `GenerateV7` e os nomes por nível `GenerateV7Level1`,
+     `GenerateV7Level2` e `GenerateV7Level3`) define exatamente sua
+     respectiva versão e variante `0b10`.
+   - Validar que o nome por versão é o Nível 1: com entropia constante,
+     `rand_a` e o topo de `rand_b` saem inteiros da fonte, sem campo de
+     tempo sub-milissegundo, e o carimbo é o do relógio.
+   - Validar que cada nome gera no nível que declara, e não em outro:
+     com entropia constante em um, o identificador gerado pelo nome é
+     lido de volta no nível declarado (seção 7) e regerado por instante
+     nesse mesmo nível (seção 3.6), e os 16 bytes **DEVEM** coincidir.
+     A entropia em um deixa `rand_a` em `0xfff` e o topo de `rand_b` em
+     `0x3ff`, valores que nenhum campo de tempo em 0..999 assume, então
+     um nome que chamasse outro nível diverge em pelo menos um campo.
+     Conferir também cada campo: `rand_a` em `0xfff` no Nível 1 e em
+     0..999 nos demais; topo de `rand_b` em `0x3ff` nos níveis 1 e 2 e
+     em 0..999 no Nível 3.
 2. **Robustez do Analisador contra Mutações**:
    - Executar teste cobrindo **todas as 36 × 256 mutações de um único byte**
      sobre uma string canônica válida: nenhuma mutação pode causar pânico.
@@ -1034,7 +1073,10 @@ reais:
      milissegundo (`sub_ms = 999_999`).
 4. **Contagem de Sorteios de Entropia**:
    - Com gerador de contagem determinística, verificar que Nível 2 e
-     Nível 3 consomem 1 chamada; Nível 1 consome 2 chamadas.
+     Nível 3 consomem 1 chamada; Nível 1 consome 2 chamadas. Os nomes
+     consomem o mesmo que o nível que apelidam: `GenerateV7` e
+     `GenerateV7Level1` consomem 2, `GenerateV7Level2` e
+     `GenerateV7Level3` consomem 1.
 5. **Vetores Dourados da RFC 9562 para Versões Baseadas em Hash**:
    - Validar que V3 e V5 produzem exatamente os vetores publicados na
      RFC 9562 (Apêndice A), que usam o espaço `NameSpaceDNS` e o nome
@@ -1217,8 +1259,9 @@ reais:
     - Um gerador de valor zero, e uma referência nula usada como
       receptor, **DEVEM** produzir identificadores válidos e distintos
       de zero em todas as gerações do tipo: pelo relógio nos três
-      níveis, por instante, versão 4 e versão 8. Nenhuma pode derrubar o
-      processo.
+      níveis, pelo nome por versão `GenerateV7` e pelos nomes por nível
+      `GenerateV7Level1` a `GenerateV7Level3`, por instante, versão 4 e
+      versão 8. Nenhuma pode derrubar o processo.
     - Uma leitura que falhe em um gerador construído sobre um leitor
       **DEVE** entrar em pânico; nos apelidos de compatibilidade que
       devolvem erro, o pânico vira o erro de fonte de entropia, e um
@@ -1228,14 +1271,15 @@ reais:
       **verificável e obrigatório**, não aspiracional. Estas operações
       **DEVEM** ser livres de alocação, medidas em laço com contagem de
       alocações por iteração: geração binária pelo relógio nos três
-      níveis; geração binária por instante (seção 3.6); as duas
-      fronteiras e o intervalo (seção 3.5); análise estrita (seção 6.2);
-      análise permissiva nos quatro formatos, em texto e em bytes
-      (seção 6.3); extração completa dos campos de tempo (seção 7);
-      escrita da forma canônica em buffer do chamador com capacidade
-      sobrando; **escrita dos 16 bytes em buffer do chamador com
-      capacidade sobrando**; geração de versão 4; e as geradoras de tempo
-      gregoriano (versões 1, 2 e 6).
+      níveis, pelo nome por versão `GenerateV7` e pelos nomes por nível
+      `GenerateV7Level1` a `GenerateV7Level3`; geração binária por
+      instante (seção 3.6); as duas fronteiras e o intervalo (seção
+      3.5); análise estrita (seção 6.2); análise permissiva nos quatro
+      formatos, em texto e em bytes (seção 6.3); extração completa dos
+      campos de tempo (seção 7); escrita da forma canônica em buffer do
+      chamador com capacidade sobrando; **escrita dos 16 bytes em buffer
+      do chamador com capacidade sobrando**; geração de versão 4; e as
+      geradoras de tempo gregoriano (versões 1, 2 e 6).
     - **Exceção única.** A conversão que devolve uma string, pelo relógio
       ou por instante, pode alocar **exatamente uma vez**, porque o
       resultado é a alocação. Exigir zero aqui é impossível sem mudar a
@@ -1422,10 +1466,12 @@ pacote faz diferente" não são argumento novo.
 | **O gerador sem fonte de entropia (valor zero, ou referência nula) recorre à fonte padrão do pacote; fonte nula ou leitor nulo na construção entram em pânico.** | 2026-09-12 | A regra crítica da seção 5.2 manda falhar alto quando a **fonte falha**, e o valor zero era a única exceção não escrita: um auditor que a comparasse com a regra tinha fundamento textual para propor o pânico. Os três casos foram separados na seção 5.2. No valor zero não há degradação, porque a fonte padrão é a mesma que a construção correta instalaria; derrubar o processo em produção por um campo não inicializado penalizaria o chamador por um erro que não afeta a qualidade dos bits. A tolerância vale para o tipo inteiro, sem exceção por versão, e é travada por teste nas versões 7, 4 e 8. | Uma versão maior que aceite quebra de compatibilidade e um caso real em que o silêncio tenha escondido um erro de configuração. |
 | **O prefixo URN inválido devolve o sentinela de formato puro, e não um erro próprio, ao contrário das chaves malformadas.** | 2026-09-12 | A assimetria não tem motivo técnico: veio com a primeira versão do analisador permissivo (v0.3.0) e nunca foi registrada. Criar o erro de prefixo é acréscimo de símbolo público e muda o valor devolvido para uma entrada que hoje recebe o sentinela puro; quem verifica pelo sentinela não quebraria, quem compara por igualdade direta, sim. Como a lacuna era de registro e não de comportamento, a escolha foi documentar a assimetria na seção 6.4 e travá-la no caso 17 da seção 10, sem mudar a API na `v0.x`. | Um chamador real que precise distinguir prefixo inválido de dígito inválido, ou a próxima versão maior, quando a taxonomia inteira for revista de uma vez. |
 | **A conversão gregoriana inversa usa divisão euclidiana e devolve o par canônico**, com nanossegundos sempre em 0 a 999.999.999, também antes de 1970. | 2026-09-12 | A implementação anterior usava divisão truncada e devolvia resto negativo para instantes pré-1970, igual ao pacote `github.com/google/uuid`; o resultado só era correto porque `time.Unix` normaliza componentes negativas, e a especificação não tinha a volta escrita em lugar nenhum. Uma reimplementação em linguagem que não normalize erraria exatamente na borda que o caso 3 da seção 10 manda testar, e um chamador que consumisse `sec` e `nsec` diretamente recebia um par não canônico de um método público. A troca custa uma comparação fora do caminho quente e não altera o instante devolvido por `Time()`. | Nada previsto: a alternativa é publicar um par não canônico como contrato. |
+| **A conversão gregoriana inversa satura entradas abaixo do limiar de estouro**, em vez de deixar a subtração do deslocamento gregoriano girar o inteiro com sinal para o futuro. | 2026-09-12 | O tipo `GregorianTime` é público e aceita qualquer `int64`. Valores abaixo de `MinInt64 + gregorianOffset` fazem a subtração estourar e produzem silenciosamente um instante no futuro distante (~ano 30.800). O campo de 60 bits dos UUIDs v1/v6 nunca produz tais valores, mas um chamador que construa `GregorianTime` a partir de dados externos pode atingir a condição. A saturação segue o padrão de `saturatedInstant` (seção 3.5) e custa uma comparação num caminho que não é quente. | Nada previsto: a alternativa é aceitar resultado absurdo em silêncio. |
 | **Os vetores dourados das versões 1, 2 e 6 são de leitura e de reempacotamento independente, não de ida e volta por uma geração a partir de campos.** | 2026-09-12 | Uma geração de v1/v6 que aceitasse instante, sequência e nó por parâmetro seria o caminho mais direto para vetores de ida e volta, mas é exatamente o que a decisão sobre `GenerateAt` acima recusou, pelo piso de relógio por sequência. A tabela do caso 18 fixa o leitor; o reempacotamento por uma função escrita no teste, a partir das fórmulas da seção 4.1, fixa o escritor. Juntos fecham a classe de defeito do deslocamento errado aplicado simetricamente nos dois lados, que nenhum teste anterior detectava. | O mesmo que justificaria rever a decisão sobre `GenerateAt` para as versões 1, 2 e 6. |
 | **Os rótulos de texto de versão, variante e domínio são apresentação, não contrato; os atalhos de UUIDv2 pelo usuário e grupo do processo são conveniências não normativas.** | 2026-09-12 | Nenhum dos dois entra nos bytes do identificador. Os rótulos podem ser traduzidos; o que é técnico neles (fusão dos códigos de variante 0 e 1, ambiguidade do código 3) está na seção 7. Os atalhos dependem de o sistema ter identificador numérico de usuário, e em Windows gravam `0xFFFFFFFF` para todo processo: por isso são opcionais e carregam a advertência da seção 4.3, em vez de serem exigidos de uma reimplementação. | Nada previsto. |
 
 | **Os dois anexadores em buffer do chamador, o de texto e o de binário, andam juntos; o binário não ganha uma segunda forma sem erro.** | 2026-09-12 | O anexador de texto existia desde a `v0.4.0` e o binário não, sem justificativa registrada. A assimetria não se sustenta: o motivo de existir o de texto é serializar em volume sem alocar, e quem grava em coluna binária é justamente quem grava em volume. Em linguagens com as duas interfaces de anexação, satisfazer só a de texto deixa o tipo pela metade em consumidor genérico. O lado binário fica com uma única forma, a da interface, porque `append(dst, u[:]...)` é literalmente o corpo dela: `AppendTo` existe no texto porque a formatação canônica é um cálculo, e os bytes não são. O conteúdo coincide com a serialização binária, então nada de gravado muda. | Uma terceira interface de anexação na biblioteca padrão da linguagem. |
+| **O UUIDv7 existe também pelo nome: por versão, `GenerateV7`, e por nível, `GenerateV7Level1`, `GenerateV7Level2` e `GenerateV7Level3`, como métodos do gerador e funções de pacote, sem parâmetro de nível e sem forma em texto.** | 2026-09-12 | Todas as outras versões têm função própria, de `GenerateV1` a `GenerateV8`, e o UUIDv7 padrão da RFC só era pedido por `Generate(Level1)`: quem procurava a função por versão concluía que ela não existia, e a biblioteca quebrava o padrão de nomes que ela mesma estabeleceu. O nome por versão sozinho, porém, privilegiava o Nível 1 e deixava os níveis 2 e 3 por constante, e o nível é contrato de toda a coluna (seção 3.5): vale que ele fique legível no ponto da chamada. Os nomes por nível dão isso sem parâmetro, e `GenerateV7Level1` repete `GenerateV7` de propósito, para a família ser completa e a busca por qualquer dos dois nomes encontrar a função. Os apelidos custam oito símbolos, são embutidos pelo compilador e não tocam o caminho quente, porque `Generate` continua sendo a única implementação; o benchmark de cada nome iguala o do nível. Sem parâmetro de nível, porque o nome por versão designa o UUIDv7 da RFC e, nos demais, o nível já está no nome. Sem forma em texto, porque nenhuma função por versão a tem, e `GenerateString(nível)` ou `String()` já cobrem. Isto não reabre a decisão contra a família de aridades de `GenerateAt` (acima): lá o nível ia na contagem de argumentos e a proposta somava dezesseis símbolos com variantes em texto; aqui o nível está escrito no nome, não há forma em texto nem variante por instante, e a constante continua sendo a única forma de dizer o nível **como valor**. | Uma forma em texto, só se todas as funções por versão a ganharem de uma vez; um parâmetro de nível em `GenerateV7`, nunca, porque aí o nome deixaria de designar o UUIDv7 da RFC; um quarto nome por nível, só com um quarto nível. |
 
 ### 11.4 Como registrar uma decisão nova
 
@@ -1433,4 +1479,3 @@ Toda decisão de projeto — inclusive a recusa de uma proposta — entra
 **nesta seção** e no histórico de mudanças, com a data e o motivo. Uma
 proposta recusada sem registro volta na auditoria seguinte, e o custo de
 reavaliá-la é pago de novo.
-| **A conversão gregoriana inversa satura entradas abaixo do limiar de estouro**, em vez de deixar a subtração do deslocamento gregoriano girar o inteiro com sinal para o futuro. | 2026-09-12 | O tipo `GregorianTime` é público e aceita qualquer `int64`. Valores abaixo de `MinInt64 + gregorianOffset` fazem a subtração estourar e produzem silenciosamente um instante no futuro distante (~ano 30.800). O campo de 60 bits dos UUIDs v1/v6 nunca produz tais valores, mas um chamador que construa `GregorianTime` a partir de dados externos pode atingir a condição. A saturação segue o padrão de `saturatedInstant` (seção 3.5) e custa uma comparação num caminho que não é quente. | Nada previsto: a alternativa é aceitar resultado absurdo em silêncio. |

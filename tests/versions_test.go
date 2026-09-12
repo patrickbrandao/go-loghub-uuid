@@ -30,6 +30,10 @@ func TestAllVersionsHaveCorrectBits(t *testing.T) {
 	checkShape(t, "GenerateV4", uuid.GenerateV4(), 4)
 	checkShape(t, "GenerateV5", uuid.GenerateV5(uuid.NameSpaceDNS, []byte("exemplo")), 5)
 	checkShape(t, "GenerateV6", uuid.GenerateV6(), 6)
+	checkShape(t, "GenerateV7", uuid.GenerateV7(), 7)
+	checkShape(t, "GenerateV7Level1", uuid.GenerateV7Level1(), 7)
+	checkShape(t, "GenerateV7Level2", uuid.GenerateV7Level2(), 7)
+	checkShape(t, "GenerateV7Level3", uuid.GenerateV7Level3(), 7)
 	checkShape(t, "GenerateV8Random", uuid.GenerateV8Random(), 8)
 
 	// A versão 8 é de conteúdo livre: mesmo com todos os bits em um, só a

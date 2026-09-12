@@ -65,7 +65,8 @@ o erro de comprimento mesmo depois de embrulhado com `%w`, como lá.
 > dedicado com `crypto/rand` (`compatGenerator`), preservando a garantia de
 > segurança criptográfica do pacote `google/uuid`. Se o seu objetivo for
 > máxima velocidade estatística em vez de segurança criptográfica, use
-> diretamente as funções nativas `Generate(Level1)` ou `GenerateV4()`.
+> diretamente as funções nativas `GenerateV7()` (o mesmo que
+> `Generate(Level1)`) ou `GenerateV4()`.
 
 ---
 

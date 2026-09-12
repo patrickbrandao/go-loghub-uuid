@@ -661,7 +661,8 @@ func TestGeneratorWithNilReaderPanics(t *testing.T) {
 }
 
 // TestCryptoGenerator confere que o gerador criptográfico produz UUIDs
-// válidos em todos os níveis e também na versão 4.
+// válidos em todos os níveis, nos nomes do UUIDv7 por versão e por nível,
+// e também na versão 4.
 func TestCryptoGenerator(t *testing.T) {
 	g := uuid.NewCryptoGenerator()
 	for _, level := range []uuid.Level{uuid.Level1, uuid.Level2, uuid.Level3} {
@@ -669,6 +670,18 @@ func TestCryptoGenerator(t *testing.T) {
 		if u.Version() != 7 || u.Variant() != 0b10 {
 			t.Errorf("nível %d: UUID malformado %s", level, u)
 		}
+	}
+	if u := g.GenerateV7(); u.Version() != 7 || u.Variant() != 0b10 {
+		t.Errorf("versão 7 pelo nome malformada: %s", u)
+	}
+	if u := g.GenerateV7Level1(); u.Version() != 7 || u.Variant() != 0b10 {
+		t.Errorf("Nível 1 pelo nome malformado: %s", u)
+	}
+	if u := g.GenerateV7Level2(); u.Version() != 7 || u.Variant() != 0b10 {
+		t.Errorf("Nível 2 pelo nome malformado: %s", u)
+	}
+	if u := g.GenerateV7Level3(); u.Version() != 7 || u.Variant() != 0b10 {
+		t.Errorf("Nível 3 pelo nome malformado: %s", u)
 	}
 	if u := g.GenerateV4(); u.Version() != 4 || u.Variant() != 0b10 {
 		t.Errorf("versão 4 malformada: %s", u)

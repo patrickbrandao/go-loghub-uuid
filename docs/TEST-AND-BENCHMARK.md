@@ -289,6 +289,11 @@ Mede nanossegundos por operação e alocações:
 - `BenchmarkFromString` — análise estrita no formato canônico.
 - `BenchmarkImportBinary` — leitura dos campos de tempo.
 - `BenchmarkGenerateV1/V4/V5/V6` — as demais versões de UUID.
+- `BenchmarkGenerateV7` — o nome por versão do UUIDv7; deve medir o mesmo
+  que `BenchmarkGenerateLevel1`, porque é um apelido de `Generate(Level1)`
+  embutido pelo compilador.
+- `BenchmarkGenerateV7Level1/2/3` — os nomes por nível; cada um deve medir
+  o mesmo que `BenchmarkGenerateLevel1/2/3`, pelo mesmo motivo.
 - `BenchmarkGenerateV1Parallel` — custo do lock compartilhado pelas
   versões 1, 2 e 6, em contraste com o UUIDv7, que não tem lock.
 - `BenchmarkParse` — análise permissiva no formato canônico.

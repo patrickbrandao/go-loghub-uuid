@@ -40,11 +40,21 @@ Todos preservam versão 7 e variante RFC.
 | `GenerateV4`            | 4      | 122 bits aleatórios                     |
 | `GenerateV5`            | 5      | resumo SHA-1 de espaço de nomes + nome  |
 | `GenerateV6`            | 6      | versão 1 com tempo reordenado, ordenável|
+| `GenerateV7`            | 7      | tempo Unix em milissegundos (Nível 1)   |
+| `GenerateV7Level1..3`   | 7      | os três níveis pelo nome, sem argumento |
 | `Generate(Level1..3)`   | 7      | tempo Unix, com os três níveis          |
 | `GenerateV8`            | 8      | 122 bits livres, definidos pelo chamador|
 
 As versões 1, 2 e 6 compartilham um relógio interno com trava própria. O
 caminho do UUIDv7 continua sem trava alguma e sem alocações.
+
+`GenerateV7` é o UUIDv7 padrão da RFC 9562 pedido pelo nome da versão,
+como as demais: exatamente `Generate(Level1)`, com precisão de
+milissegundo, também como método do `Generator`. Os três níveis também
+têm nome próprio, sem o argumento de nível: `GenerateV7Level1` (o mesmo
+que `GenerateV7`), `GenerateV7Level2` e `GenerateV7Level3` são
+exatamente `Generate` com o nível correspondente, e deixam o nível
+legível no ponto da chamada.
 
 ## Consulta por intervalo de tempo
 
@@ -161,11 +171,12 @@ func newID() string { return Gen.GenerateString(uuid.Level3) }
 ## Aviso de segurança
 
 O gerador padrão (`NewGenerator`, e as funções de pacote `Generate`,
-`GenerateString`, `GenerateV4` e `GenerateV8Random`) tira entropia do
-gerador do runtime do Go, uma instância de **ChaCha8** por thread semeada
-pelo sistema operacional. É uma cifra de fluxo, resistente a predição, e
-não o PRNG estatístico usado até a `v0.3.0`. Ainda assim, a própria
-documentação do Go recomenda `crypto/rand` para uso sensível a
+`GenerateString`, `GenerateV7`, `GenerateV7Level1` a `GenerateV7Level3`,
+`GenerateV4` e `GenerateV8Random`) tira entropia do gerador do runtime do
+Go, uma instância de **ChaCha8** por thread semeada pelo sistema
+operacional. É uma cifra de fluxo, resistente a predição, e não o PRNG
+estatístico usado até a `v0.3.0`. Ainda assim, a própria documentação do
+Go recomenda `crypto/rand` para uso sensível a
 segurança — os apelidos de compatibilidade `New`, `NewString`,
 `NewRandom` e `NewV7` já leem de lá. E, independentemente da fonte, todo
 UUIDv7 expõe o instante de criação por construção.

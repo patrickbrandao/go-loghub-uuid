@@ -42,6 +42,25 @@ func ExampleGenerator_Generate() {
 	// Output: 7 2
 }
 
+// GenerateV7 é o UUIDv7 padrão da RFC 9562 pelo nome da versão, como
+// GenerateV1 e GenerateV4: exatamente Generate(Level1), com precisão de
+// milissegundo. Existe também como método do Generator.
+func ExampleGenerateV7() {
+	u := uuid.GenerateV7()
+	fmt.Println(u.Version(), u.Variant())
+	// Output: 7 2
+}
+
+// GenerateV7Level1, GenerateV7Level2 e GenerateV7Level3 são os três níveis
+// pelo nome, sem o argumento de nível: cada um é exatamente Generate com
+// o nível correspondente, e GenerateV7Level1 é o mesmo que GenerateV7.
+// Existem também como métodos do Generator.
+func ExampleGenerateV7Level3() {
+	u := uuid.GenerateV7Level3() // milissegundos, microssegundos e nanossegundos embutidos
+	fmt.Println(u.Version(), u.Variant())
+	// Output: 7 2
+}
+
 // FromString aceita apenas a forma canônica 8-4-4-4-12, em maiúsculas ou
 // minúsculas, e devolve ErrInvalidFormat para qualquer outra coisa.
 func ExampleFromString() {

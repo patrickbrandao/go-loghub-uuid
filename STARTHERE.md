@@ -30,6 +30,7 @@ go-loghub-uuid/
 │
 │   # PRODUÇÃO — núcleo do UUIDv7 (caminho quente, sem trava, sem alocação)
 ├── uuid.go                 # tipos, Generator, geração por nível
+├── version7.go             # GenerateV7 e GenerateV7Level1/2/3: o UUIDv7 pelo nome, por versão e por nível
 ├── conversion.go           # String()/FromString + apelidos de conversão
 ├── import.go               # Time, Import, ImportBinary
 │
@@ -84,8 +85,8 @@ go-loghub-uuid/
     ├── bounds_test.go          # fronteiras de tempo: MinAt, MaxAt e RangeAt
     ├── construct_test.go       # geração por instante explícito: GenerateAt
     ├── binary_sql_test.go      # BinaryUUID e NullBinaryUUID
-    ├── golden_test.go          # vetores dourados: extensão multinível e versões 1, 2 e 6
     ├── binary_serialization_test.go # serialização JSON, texto e binário dos tipos binários
+    ├── golden_test.go          # vetores dourados: extensão multinível e versões 1, 2 e 6
     ├── clockstate_test.go      # isolamento do nó e da sequência entre testes
     ├── fuzz_test.go            # FuzzFromString, FuzzParse, FuzzNullUUIDJSON,
     │                            # FuzzInstantArithmetic e FuzzGregorianUnixTime
@@ -140,6 +141,15 @@ próprias.
 - `(*Generator) GenerateString(Level) string`
 - `Generate(Level) UUID` — atalho de pacote (gerador padrão interno)
 - `GenerateString(Level) string` — atalho de pacote
+- `(*Generator) GenerateV7() UUID` e `GenerateV7() UUID` — o UUIDv7
+  padrão da RFC 9562 pelo nome da versão, como `GenerateV1` a
+  `GenerateV8`; exatamente `Generate(Level1)`, com precisão de
+  milissegundo. Não recebe nível nem tem forma em texto.
+- `(*Generator) GenerateV7Level1() UUID`, `GenerateV7Level2() UUID`,
+  `GenerateV7Level3() UUID` e as funções de pacote de mesmo nome — os
+  três níveis pelo nome, sem o argumento: exatamente `Generate` com o
+  nível correspondente. `GenerateV7Level1` é o mesmo que `GenerateV7`.
+  Sem forma em texto: use `GenerateString(nível)` ou `String()`.
 
 **Conversão**
 - `(UUID) String() string`
@@ -187,6 +197,8 @@ próprias.
 - `GenerateV5(space UUID, name []byte) UUID` — SHA-1, determinística.
 - `GenerateHash(h hash.Hash, space UUID, name []byte, version byte) UUID`
 - `GenerateV6() UUID` — versão 1 com tempo reordenado, ordenável.
+- `GenerateV7() UUID` e `GenerateV7Level1..3() UUID` — o UUIDv7 pelo
+  nome, por versão e por nível; ver 3.1.
 - `GenerateV8(data [16]byte) UUID`, `(*Generator) GenerateV8() UUID`,
   `GenerateV8Random() UUID` — 122 bits livres.
 

@@ -66,6 +66,7 @@ Each source file is a distinct concern.
 - `uuid.go` — types (`Level`, `UUID [16]byte`, `Generator`, level constants), generation logic, package-level default generator.
 - `conversion.go` — `String()` / `FromString()` and their aliases (`BinaryToString`, `StringToBinary`).
 - `import.go` — `Time` struct and `Import` / `ImportBinary` (extract time fields back out of a UUID).
+- `version7.go` — the UUIDv7 names: `GenerateV7` (the per-version name for `Generate(Level1)`, mirroring `GenerateV4`) and `GenerateV7Level1`/`GenerateV7Level2`/`GenerateV7Level3` (the per-level names for `Generate(LevelN)`; `GenerateV7Level1` is the same function as `GenerateV7`), each on the `Generator` and as a package function. One-line wrappers the compiler inlines; the implementation stays in `uuid.go`, so this file never carries logic, never gains a level parameter (the level is in the name) and never gains a string form. `TestGenerateV7LevelNamesMatchLevels` regenerates each name's output by instant at the declared level and requires identical bytes, so a name wired to the wrong level fails. Decided in `docs/SPEC.md` §11.3.
 
 **Other UUID versions** — none of these are reached from the v7 path.
 - `clock.go` — gregorian epoch constants, `GregorianTime`, and the mutex-guarded state (monotonic 100 ns clock, 14-bit clock sequence, 48-bit node) shared by v1/v2/v6.

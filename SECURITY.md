@@ -33,15 +33,17 @@ documentadas no `README.md` e em `docs/DEPLOY-FULL.md`, e não são
 considerados vulnerabilidades:
 
 - **O gerador padrão não serve para segredos.** `NewGenerator` e as
-  funções de pacote `Generate`, `GenerateString`, `GenerateV4` e
+  funções de pacote `Generate`, `GenerateString`, `GenerateV7`,
+  `GenerateV7Level1` a `GenerateV7Level3`, `GenerateV4` e
   `GenerateV8Random` leem do gerador do runtime do Go (ChaCha8 por
-  thread). É resistente a predição, mas a documentação do Go recomenda
-  `crypto/rand` para uso sensível a segurança e a biblioteca não promete
-  força criptográfica nessa fonte. Para identificadores que precisem ser
-  inadivinháveis (token de sessão, link privado, chave de recuperação),
-  use `NewCryptoGenerator`, `NewGeneratorWithReader` com `crypto/rand`,
-  ou os apelidos de compatibilidade `New`, `NewString`, `NewRandom` e
-  `NewV7`, que já leem de `crypto/rand`.
+  thread). É resistente a predição, mas a documentação do
+  Go recomenda `crypto/rand` para uso sensível a segurança e a
+  biblioteca não promete força criptográfica nessa fonte. Para
+  identificadores que precisem ser inadivinháveis (token de sessão, link
+  privado, chave de recuperação), use `NewCryptoGenerator`,
+  `NewGeneratorWithReader` com `crypto/rand`, ou os apelidos de
+  compatibilidade `New`, `NewString`, `NewRandom` e `NewV7`, que já leem
+  de `crypto/rand`.
 - **Todo UUIDv7 expõe o instante de criação**, com precisão de
   milissegundo no Nível 1 e até nanossegundo no Nível 3. Isso é a
   função do formato, não um vazamento.
