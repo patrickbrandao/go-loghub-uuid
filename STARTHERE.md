@@ -46,7 +46,7 @@ go-loghub-uuid/
 ├── bounds.go               # MinAt, MaxAt e RangeAt: fronteiras para consulta por intervalo
 ├── parse.go                # Parse permissivo, Validate, FromBytes, MustParse
 ├── values.go               # Nil, Max, Compare, URN, Bytes, IsValid, UUIDs
-├── encoding.go             # AppendTo, MarshalText/Binary e as leituras
+├── encoding.go             # AppendTo/AppendBinary, MarshalText/Binary e as leituras
 ├── sql.go                  # Scan, Value e NullUUID
 ├── inspect.go              # Timestamp, GregorianTime, ClockSequence, NodeID
 ├── entropy.go              # NewGeneratorWithReader e NewCryptoGenerator
@@ -143,6 +143,8 @@ próprias.
 - `(UUID) String() string`
 - `(UUID) AppendTo(dst []byte) []byte` — escreve os 36 bytes no buffer do
   chamador; sem alocação quando há capacidade.
+- `(UUID) AppendBinary(dst []byte) ([]byte, error)` — o mesmo com os 16
+  bytes crus; o erro é sempre nulo.
 - `FromString(string) (UUID, error)`
 - `BinaryToString(UUID) string` — apelido de `String()`
 - `StringToBinary(string) (UUID, error)` — apelido de `FromString`
@@ -214,6 +216,10 @@ própria, independente do caminho do UUIDv7.
 - `(UUID) AppendText(dst []byte) ([]byte, error)` — `encoding.TextAppender`
   do Go 1.24; o erro é sempre nulo.
 - `(UUID) MarshalBinary`, `(*UUID) UnmarshalBinary`
+- `(UUID) AppendBinary(dst []byte) ([]byte, error)` —
+  `encoding.BinaryAppender` do Go 1.24, o par binário de `AppendText`;
+  mesmo conteúdo de `MarshalBinary`, sem alocar quando `dst` tem
+  capacidade.
 - `(*UUID) Scan(any) error`, `(UUID) Value() (driver.Value, error)`
 - `NullUUID` — coluna que aceita `NULL`, com `Scan`, `Value` e as
   serializações em JSON, texto e binário.

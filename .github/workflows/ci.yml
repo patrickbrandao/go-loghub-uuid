@@ -208,9 +208,13 @@ jobs:
       - name: Suíte completa (inclui massa de 1.000.000) com detector de corrida
         run: go test ./... -race -v -timeout 20m
 
-      # Os três alvos rodam sempre, mesmo que um falhe (continue-on-error),
+      # Os cinco alvos rodam sempre, mesmo que um falhe (continue-on-error),
       # para que uma campanha não esconda a falha da seguinte; o passo
       # final consolida o resultado e falha o job se algum deles falhou.
+      #
+      # Os três primeiros varrem texto, onde o risco é leitura fora dos
+      # limites. Os dois últimos varrem aritmética de tempo, onde o risco
+      # é saturação, estouro de sinal e resto negativo.
 
       - name: Fuzzing do analisador estrito (FuzzFromString)
         id: fuzz-fromstring
@@ -226,6 +230,16 @@ jobs:
         id: fuzz-nulluuid
         continue-on-error: true
         run: go test ./tests/ -run '^$' -fuzz FuzzNullUUIDJSON -fuzztime 60s
+
+      - name: Fuzzing da aritmética do instante (FuzzInstantArithmetic)
+        id: fuzz-instant
+        continue-on-error: true
+        run: go test ./tests/ -run '^$' -fuzz FuzzInstantArithmetic -fuzztime 60s
+
+      - name: Fuzzing da conversão gregoriana (FuzzGregorianUnixTime)
+        id: fuzz-gregorian
+        continue-on-error: true
+        run: go test ./tests/ -run '^$' -fuzz FuzzGregorianUnixTime -fuzztime 60s
 
       - name: Corpus das falhas de fuzzing (artefato)
         # O Go grava a entrada que quebrou o alvo em
@@ -247,7 +261,9 @@ jobs:
           for resultado in \
             "FuzzFromString=${{ steps.fuzz-fromstring.outcome }}" \
             "FuzzParse=${{ steps.fuzz-parse.outcome }}" \
-            "FuzzNullUUIDJSON=${{ steps.fuzz-nulluuid.outcome }}"; do
+            "FuzzNullUUIDJSON=${{ steps.fuzz-nulluuid.outcome }}" \
+            "FuzzInstantArithmetic=${{ steps.fuzz-instant.outcome }}" \
+            "FuzzGregorianUnixTime=${{ steps.fuzz-gregorian.outcome }}"; do
             echo "$resultado"
             case "$resultado" in *=failure) falhou=1 ;; esac
           done

@@ -85,6 +85,33 @@ func (u UUID) MarshalBinary() ([]byte, error) {
 	return u[:], nil
 }
 
+// AppendBinary escreve os 16 bytes em ordem de rede no fim de dst e
+// devolve o slice estendido, com a assinatura da interface
+// encoding.BinaryAppender, introduzida no Go 1.24 junto da
+// encoding.TextAppender que AppendText satisfaz. O erro devolvido é
+// sempre nulo.
+//
+// Não aloca quando dst tem capacidade sobrando; passar nil é válido e
+// faz a função alocar os 16 bytes.
+//
+// Ao contrário do lado do texto, aqui não existe uma segunda forma sem
+// erro. AppendTo existe porque a formatação canônica é um cálculo; os
+// bytes não são: append(dst, u[:]...) é exatamente o corpo deste método,
+// e o chamador que não quer o erro sempre nulo escreve a linha direto.
+// O método existe para satisfazer a interface.
+//
+// A interface não é referenciada em lugar nenhum do pacote, então o
+// método compila também nas versões anteriores do Go, onde simplesmente
+// não satisfaz interface alguma. Isso mantém o go.mod em 1.22, como em
+// AppendText.
+//
+// O conteúdo é idêntico ao de MarshalBinary, portanto acrescentar este
+// método NÃO muda formato de dados gravado — ao contrário do que
+// aconteceu quando MarshalText passou a existir.
+func (u UUID) AppendBinary(dst []byte) ([]byte, error) {
+	return append(dst, u[:]...), nil
+}
+
 // UnmarshalBinary lê exatamente 16 bytes em ordem de rede. Implementa
 // encoding.BinaryUnmarshaler.
 //

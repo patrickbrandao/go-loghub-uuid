@@ -91,6 +91,21 @@ func TestAppendToZeroAllocations(t *testing.T) {
 // sinkB evita que o compilador elimine as chamadas de AppendTo.
 var sinkB []byte
 
+// TestAppendBinaryZeroAllocations confere a mesma propriedade de
+// AppendTo no lado binário: com capacidade sobrando no buffer do
+// chamador, a escrita dos 16 bytes não aloca nada, enquanto
+// MarshalBinary devolve uma fatia apoiada no valor recebido.
+func TestAppendBinaryZeroAllocations(t *testing.T) {
+	u := uuid.Generate(uuid.Level3)
+	buf := make([]byte, 0, 32)
+	allocs := testing.AllocsPerRun(1_000, func() {
+		sinkB, _ = u.AppendBinary(buf[:0])
+	})
+	if allocs != 0 {
+		t.Errorf("AppendBinary: %.0f alocações por chamada, esperado 0", allocs)
+	}
+}
+
 // TestTimeBasedZeroAllocations confere que as versões 1, 2 e 6 também
 // escrevem direto no valor de retorno, sem escapar para o heap.
 func TestTimeBasedZeroAllocations(t *testing.T) {

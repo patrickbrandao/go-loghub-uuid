@@ -608,6 +608,14 @@ func TestInspectorsRejectOtherVersions(t *testing.T) {
 		"v8": uuid.GenerateV8Random(),
 	}
 	for name, u := range others {
+		// A versão 7 entra no mapa porque não carrega sequência, nó,
+		// domínio nem identificador local, mas é a única que carrega
+		// tempo Unix: a leitura por nível só devolve falso nas outras.
+		if name != "v7" {
+			if _, ok := u.TimestampWithLevel(uuid.Level3); ok {
+				t.Errorf("%s: TimestampWithLevel deveria devolver falso", name)
+			}
+		}
 		if _, ok := u.ClockSequence(); ok {
 			t.Errorf("%s: ClockSequence deveria devolver falso", name)
 		}

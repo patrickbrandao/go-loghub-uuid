@@ -840,6 +840,23 @@ A biblioteca deve disponibilizar operações de consulta:
   do buffer do chamador e devolve o buffer estendido, **sem alocar**
   quando houver capacidade. É o caminho previsto para serializar grandes
   volumes; a conversão que devolve string aloca a cada chamada.
+- **`AppendBinary(dst) dst`**: o equivalente binário, escrevendo os 16
+  bytes em ordem de rede no fim do buffer do chamador, também sem alocar
+  quando houver capacidade. O conteúdo é idêntico ao da serialização
+  binária, portanto acrescentá-lo **não** muda formato de dados gravado.
+
+  **Regra normativa — os dois anexadores andam juntos.** Uma
+  implementação que ofereça um **DEVE** oferecer o outro. A assimetria
+  não tem justificativa técnica: se o motivo de existir o anexador de
+  texto é serializar em volume sem alocar, o mesmo motivo vale para os
+  bytes, e quem grava em coluna binária é justamente quem grava em
+  volume. Em linguagens que definam interfaces de anexação em texto e em
+  binário, como o Go a partir da 1.24, satisfazer só a primeira deixa o
+  tipo pela metade em todo consumidor genérico que prefira anexar a
+  alocar.
+
+  O lado binário não precisa de uma segunda forma sem erro, ao contrário
+  do de texto: a formatação canônica é um cálculo, os 16 bytes não são.
 - **Descrições em texto de versão, variante e domínio**
   (`VersionString`, `VariantString` e o texto do domínio da versão 2): a
   biblioteca **PODE** oferecer descrições legíveis para os três códigos.
@@ -962,6 +979,23 @@ reais:
    - Executar teste cobrindo **todas as 36 × 256 mutações de um único byte**
      sobre uma string canônica válida: nenhuma mutação pode causar pânico.
    - Submeter o analisador a campanhas de *fuzzing* contínuo.
+   - **O fuzzing não para no texto.** A aritmética temporal **DEVE**
+     receber campanhas próprias, e por um motivo diferente: no texto o
+     risco é leitura fora dos limites, e aqui é saturação, estouro de
+     sinal e resto negativo. Tabela de casos escolhidos à mão não varre
+     faixa, e é precisamente nas duas metades do inteiro com sinal que o
+     estouro da multiplicação por mil (seção 3.2, item 3) e o resto
+     negativo da conversão inversa (seção 4.1) se manifestam. São dois
+     alvos:
+     - **Construção por instante**: recebe dois instantes arbitrários e
+       exige, em todos os níveis mais um nível desconhecido, versão 7 e
+       variante `0b10` nas duas fronteiras, fronteira inferior nunca
+       acima da superior, o valor gerado sempre dentro das fronteiras do
+       próprio instante, e monotonicidade quando o segundo instante não
+       é anterior ao primeiro.
+     - **Conversão gregoriana inversa**: recebe um instante gregoriano em
+       toda a faixa do inteiro com sinal e exige o par canônico, com a
+       fração entre zero e um segundo e múltipla de 100 ns.
 3. **Bordas Temporais Extremas**:
    - Testar instantes com data anterior a 1970 (ex.: ano 1969 e ano 1800).
    - O caso pré-1970 **DEVE** usar um segundo negativo com fração
@@ -1173,8 +1207,9 @@ reais:
       análise permissiva nos quatro formatos, em texto e em bytes
       (seção 6.3); extração completa dos campos de tempo (seção 7);
       escrita da forma canônica em buffer do chamador com capacidade
-      sobrando; geração de versão 4; e as geradoras de tempo gregoriano
-      (versões 1, 2 e 6).
+      sobrando; **escrita dos 16 bytes em buffer do chamador com
+      capacidade sobrando**; geração de versão 4; e as geradoras de tempo
+      gregoriano (versões 1, 2 e 6).
     - **Exceção única.** A conversão que devolve uma string, pelo relógio
       ou por instante, pode alocar **exatamente uma vez**, porque o
       resultado é a alocação. Exigir zero aqui é impossível sem mudar a
@@ -1363,6 +1398,8 @@ pacote faz diferente" não são argumento novo.
 | **A conversão gregoriana inversa usa divisão euclidiana e devolve o par canônico**, com nanossegundos sempre em 0 a 999.999.999, também antes de 1970. | 2026-09-12 | A implementação anterior usava divisão truncada e devolvia resto negativo para instantes pré-1970, igual ao pacote `github.com/google/uuid`; o resultado só era correto porque `time.Unix` normaliza componentes negativas, e a especificação não tinha a volta escrita em lugar nenhum. Uma reimplementação em linguagem que não normalize erraria exatamente na borda que o caso 3 da seção 10 manda testar, e um chamador que consumisse `sec` e `nsec` diretamente recebia um par não canônico de um método público. A troca custa uma comparação fora do caminho quente e não altera o instante devolvido por `Time()`. | Nada previsto: a alternativa é publicar um par não canônico como contrato. |
 | **Os vetores dourados das versões 1, 2 e 6 são de leitura e de reempacotamento independente, não de ida e volta por uma geração a partir de campos.** | 2026-09-12 | Uma geração de v1/v6 que aceitasse instante, sequência e nó por parâmetro seria o caminho mais direto para vetores de ida e volta, mas é exatamente o que a decisão sobre `GenerateAt` acima recusou, pelo piso de relógio por sequência. A tabela do caso 18 fixa o leitor; o reempacotamento por uma função escrita no teste, a partir das fórmulas da seção 4.1, fixa o escritor. Juntos fecham a classe de defeito do deslocamento errado aplicado simetricamente nos dois lados, que nenhum teste anterior detectava. | O mesmo que justificaria rever a decisão sobre `GenerateAt` para as versões 1, 2 e 6. |
 | **Os rótulos de texto de versão, variante e domínio são apresentação, não contrato; os atalhos de UUIDv2 pelo usuário e grupo do processo são conveniências não normativas.** | 2026-09-12 | Nenhum dos dois entra nos bytes do identificador. Os rótulos podem ser traduzidos; o que é técnico neles (fusão dos códigos de variante 0 e 1, ambiguidade do código 3) está na seção 7. Os atalhos dependem de o sistema ter identificador numérico de usuário, e em Windows gravam `0xFFFFFFFF` para todo processo: por isso são opcionais e carregam a advertência da seção 4.3, em vez de serem exigidos de uma reimplementação. | Nada previsto. |
+
+| **Os dois anexadores em buffer do chamador, o de texto e o de binário, andam juntos; o binário não ganha uma segunda forma sem erro.** | 2026-09-12 | O anexador de texto existia desde a `v0.4.0` e o binário não, sem justificativa registrada. A assimetria não se sustenta: o motivo de existir o de texto é serializar em volume sem alocar, e quem grava em coluna binária é justamente quem grava em volume. Em linguagens com as duas interfaces de anexação, satisfazer só a de texto deixa o tipo pela metade em consumidor genérico. O lado binário fica com uma única forma, a da interface, porque `append(dst, u[:]...)` é literalmente o corpo dela: `AppendTo` existe no texto porque a formatação canônica é um cálculo, e os bytes não são. O conteúdo coincide com a serialização binária, então nada de gravado muda. | Uma terceira interface de anexação na biblioteca padrão da linguagem. |
 
 ### 11.4 Como registrar uma decisão nova
 

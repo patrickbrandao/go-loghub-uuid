@@ -61,7 +61,10 @@ go test ./tests/ -short -run 'Allocations|SingleAllocation' -v
 
 ### Fuzzing
 
-Cobrem mutações e entradas arbitrárias contra o parser:
+São cinco alvos, em dois grupos. Os três primeiros varrem **texto**,
+onde o risco é leitura fora dos limites; os dois últimos varrem
+**aritmética de tempo**, onde o risco é saturação, estouro de sinal e
+resto negativo.
 
 ```bash
 # Fuzz do analisador estrito
@@ -72,7 +75,23 @@ go test ./tests/ -run '^$' -fuzz FuzzParse -fuzztime 60s
 
 # Fuzz do leitor de JSON de NullUUID (concordância com o tipo UUID)
 go test ./tests/ -run '^$' -fuzz FuzzNullUUIDJSON -fuzztime 60s
+
+# Fuzz das fronteiras e da geração por instante (seções 3.5 e 3.6)
+go test ./tests/ -run '^$' -fuzz FuzzInstantArithmetic -fuzztime 60s
+
+# Fuzz da conversão gregoriana inversa (seção 4.1)
+go test ./tests/ -run '^$' -fuzz FuzzGregorianUnixTime -fuzztime 60s
 ```
+
+Os dois alvos de aritmética existem porque a suíte cobre essas bordas
+por tabela, com valores escolhidos à mão, e tabela não varre faixa.
+`FuzzInstantArithmetic` recebe dois instantes e exige versão 7, variante
+RFC, fronteira inferior nunca acima da superior, o valor gerado dentro
+das fronteiras e monotonicidade quando o instante não regride, nos três
+níveis mais um nível desconhecido. `FuzzGregorianUnixTime` recebe um
+instante gregoriano em toda a faixa do inteiro com sinal e exige o par
+canônico, com a fração entre zero e um segundo e múltipla de 100 ns: é a
+metade da faixa anterior a 1970 que a divisão truncada quebraria.
 
 Quando uma campanha encontra uma entrada que quebra o alvo, o Go a grava
 em `tests/testdata/fuzz/<Alvo>/<hash>` (diretório ignorado pelo Git) e a
@@ -125,11 +144,11 @@ go tool cover -html=cover.out            # abre o relatório no navegador
 
 O CI publica o relatório (`cover.out` e `cover.html`) como artefato
 `cobertura` do job `test` e falha se o total ficar abaixo de 95%. Os
-ramos que ficam de fora por decisão, e não por esquecimento: as falhas
-de leitura de `crypto/rand` (`fillRandom` e os `recover` de `NewRandom`
-e `NewV7`), inalcançáveis a partir do Go 1.24. O restante
-não coberto são ramos de erro secundários dos analisadores, já
-exercitados pelo fuzzing.
+ramos que ficam de fora são **apenas** as falhas de leitura de
+`crypto/rand` (`fillRandom` e os `recover` de `NewRandom` e `NewV7`),
+inalcançáveis a partir do Go 1.24, e ficam de fora por decisão, não por
+esquecimento. Não há nenhum outro bloco descoberto: se `go tool cover`
+apontar um, ele é lacuna de teste e não exceção documentada.
 
 ### Integração contínua
 
@@ -160,8 +179,9 @@ cada sistema (por exemplo, `GenerateV2Person` no Windows).
 
 **`deep`**, toda segunda-feira e sob demanda pela aba Actions: a suíte
 completa (com os testes de massa de 1.000.000) sob o detector de corrida
-e 60 segundos de fuzzing em cada um dos três alvos. Os três rodam sempre,
-mesmo que um falhe, e o job falha ao final se algum tiver falhado.
+e 60 segundos de fuzzing em cada um dos cinco alvos. Os cinco rodam
+sempre, mesmo que um falhe, e o job falha ao final se algum tiver
+falhado.
 
 Para disparar `test-os` e `deep` manualmente:
 

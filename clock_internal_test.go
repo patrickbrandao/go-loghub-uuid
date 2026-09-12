@@ -1,9 +1,13 @@
 package loghubuuid
 
-// Testes internos das funções puras de decomposição do instante. Este é o
-// único arquivo de teste autorizado na raiz: as bordas do relógio (antes
-// de 1970, ano 2300, viradas de milissegundo e de segundo) não podem ser
-// exercitadas de fora do pacote, porque não há relógio injetável.
+// Testes internos do relógio. Este é um dos dois arquivos de teste
+// autorizados na raiz, e cobre o que não pode ser exercitado de fora do
+// pacote: as bordas da decomposição do instante (antes de 1970, ano
+// 2300, viradas de milissegundo e de segundo), porque não há relógio
+// injetável; a máquina de estados do piso por sequência, porque o
+// adiantamento precisa ser simulado; e a inicialização tardia da
+// sequência de relógio, porque o estado "não inicializada" é privado e
+// nenhuma entrada pública volta a ele.
 
 import (
 	"testing"
@@ -148,4 +152,49 @@ func TestUnusedSequenceSkipsUsedOnes(t *testing.T) {
 		t.Fatalf("sorteio com todas as sequências usadas devolveu %#x, fora de 14 bits", got)
 	}
 	seqLastTime = nil
+}
+
+// TestClockSequenceInitializesOnFirstUse cobre a inicialização tardia da
+// sequência de relógio: consultá-la antes de qualquer geração precisa
+// sortear uma sequência, e não devolver zero.
+//
+// O teste vive na raiz porque clockSeq é estado privado do pacote, e o
+// ramo só é alcançável com ela em zero, o valor que significa "ainda não
+// inicializada". De fora não há como voltar a esse estado: toda entrada
+// pública liga o bit 15.
+//
+// Antes de zerar, o piso da sequência que sai é guardado à mão. Sem
+// isso, setClockSequenceLocked veria clockSeq igual a zero, não teria
+// sequência de saída para registrar e descartaria o piso acumulado — o
+// que é exatamente a repetição de UUIDv1 que o piso por sequência
+// existe para impedir.
+func TestClockSequenceInitializesOnFirstUse(t *testing.T) {
+	clockMu.Lock()
+	outgoing := clockSeq
+	if outgoing != 0 {
+		if seqLastTime == nil {
+			seqLastTime = make(map[uint16]uint64)
+		}
+		seqLastTime[outgoing] = lastClockTime
+	}
+	clockSeq = 0
+	clockMu.Unlock()
+
+	got := ClockSequence()
+
+	clockMu.Lock()
+	defer clockMu.Unlock()
+	if clockSeq == 0 {
+		t.Fatal("ClockSequence não inicializou a sequência de relógio")
+	}
+	if got < 0 || got > 0x3FFF {
+		t.Errorf("ClockSequence devolveu %#x, fora dos 14 bits", got)
+	}
+	if got != int(clockSeq&0x3FFF) {
+		t.Errorf("ClockSequence devolveu %#x, mas o estado guarda %#x", got, clockSeq&0x3FFF)
+	}
+	// A sequência sorteada é inédita, então o piso dela começa em zero.
+	if lastClockTime != 0 {
+		t.Errorf("piso da sequência inédita: %d, esperado 0", lastClockTime)
+	}
 }

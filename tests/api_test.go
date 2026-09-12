@@ -309,6 +309,58 @@ func TestAppendTo(t *testing.T) {
 	}
 }
 
+// TestAppendBinary confere a escrita dos 16 bytes crus no fim do buffer
+// do chamador, que é a assinatura de encoding.BinaryAppender. O conteúdo
+// tem de ser idêntico ao de MarshalBinary: se divergirem, um dos dois
+// caminhos de serialização binária está errado.
+func TestAppendBinary(t *testing.T) {
+	u := uuid.MustParse(canonical)
+
+	cru, err := u.AppendBinary(nil)
+	if err != nil {
+		t.Fatalf("AppendBinary(nil) devolveu erro %v, esperado nulo", err)
+	}
+	if !bytes.Equal(cru, u[:]) {
+		t.Errorf("AppendBinary(nil) = %x, esperado %x", cru, u[:])
+	}
+
+	marshalado, err := u.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary devolveu erro %v", err)
+	}
+	if !bytes.Equal(cru, marshalado) {
+		t.Errorf("AppendBinary = %x, mas MarshalBinary = %x; os dois têm de coincidir", cru, marshalado)
+	}
+
+	prefixo := []byte{0xAA}
+	comPrefixo, err := u.AppendBinary(prefixo)
+	if err != nil {
+		t.Fatalf("AppendBinary sobre prefixo devolveu erro %v", err)
+	}
+	if !bytes.Equal(comPrefixo, append([]byte{0xAA}, u[:]...)) {
+		t.Errorf("AppendBinary sobre prefixo = %x", comPrefixo)
+	}
+	if len(prefixo) != 1 {
+		t.Errorf("AppendBinary alterou o comprimento de dst: %x", prefixo)
+	}
+
+	// A ida e volta fecha com UnmarshalBinary, e os valores especiais
+	// entram porque são os que não carregam versão nem variante.
+	for _, esperado := range []uuid.UUID{u, uuid.Nil, uuid.Max} {
+		buf, err := esperado.AppendBinary(make([]byte, 0, 16))
+		if err != nil {
+			t.Fatalf("%v: AppendBinary devolveu erro %v", esperado, err)
+		}
+		var volta uuid.UUID
+		if err := volta.UnmarshalBinary(buf); err != nil {
+			t.Fatalf("%v: UnmarshalBinary devolveu erro %v", esperado, err)
+		}
+		if volta != esperado {
+			t.Errorf("ida e volta binária = %v, esperado %v", volta, esperado)
+		}
+	}
+}
+
 // TestBytes confere que Bytes devolve uma cópia independente dos 16
 // bytes, ao contrário de u[:].
 func TestBytes(t *testing.T) {
@@ -462,6 +514,14 @@ func TestSQLScanAndValue(t *testing.T) {
 	if err := u.Scan("invalido"); err == nil || u != reference {
 		t.Errorf("Scan de texto inválido: %s, erro %v, esperado erro sem alterar o receptor", u, err)
 	}
+
+	// Fatia de bytes que não está vazia nem tem 16 bytes cai no caminho de
+	// texto, e um texto inválido ali precisa falhar sem alterar o receptor.
+	// É o ramo que distingue "bytes crus" de "texto em bytes".
+	u = reference
+	if err := u.Scan([]byte("nao-e-um-uuid")); !errors.Is(err, uuid.ErrInvalidFormat) || u != reference {
+		t.Errorf("Scan de bytes de texto inválido: %s, erro %v, esperado erro de formato sem alterar o receptor", u, err)
+	}
 }
 
 // TestNullUUID confere o tipo que aceita coluna nula.
@@ -537,6 +597,32 @@ func TestNullUUID(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte("null"), &back); err != nil || back.Valid {
 		t.Errorf("volta de null: %+v, erro %v", back, err)
+	}
+}
+
+// TestNullUUIDRejectsUnsupportedType confere que um valor de tipo
+// inesperado não é confundido com ausência de valor: o auxiliar que
+// reconhece NULL, texto vazio e fatia vazia precisa recusar qualquer
+// outro tipo, e o erro tem de chegar ao chamador com Valid falso.
+func TestNullUUIDRejectsUnsupportedType(t *testing.T) {
+	n := uuid.NullUUID{UUID: uuid.MustParse(canonical), Valid: true}
+	if err := n.Scan(42); !errors.Is(err, uuid.ErrInvalidScanType) {
+		t.Errorf("Scan de inteiro: erro %v, esperado ErrInvalidScanType", err)
+	}
+	if n.Valid {
+		t.Error("Scan com erro deveria deixar Valid falso")
+	}
+
+	// Um float também não é ausência de valor, nem um booleano: o auxiliar
+	// só trata NULL, string e fatia de bytes.
+	for _, src := range []any{3.14, true, struct{}{}} {
+		var outro uuid.NullUUID
+		if err := outro.Scan(src); !errors.Is(err, uuid.ErrInvalidScanType) {
+			t.Errorf("Scan de %T: erro %v, esperado ErrInvalidScanType", src, err)
+		}
+		if outro.Valid {
+			t.Errorf("Scan de %T deveria deixar Valid falso", src)
+		}
 	}
 }
 

@@ -3,8 +3,10 @@ package tests
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"testing"
+	"time"
 
 	uuid "github.com/patrickbrandao/go-loghub-uuid"
 )
@@ -176,6 +178,135 @@ func FuzzNullUUIDJSON(f *testing.F) {
 			}
 		} else if !viaUUID.IsZero() {
 			t.Fatalf("NullUUID ausente mas UUID leu %s de %q", viaUUID, data)
+		}
+	})
+}
+
+// FuzzInstantArithmetic procura instantes que quebrem as invariantes da
+// construção a partir de um instante explícito: as fronteiras da seção
+// 3.5 e a geração da seção 3.6 da especificação.
+//
+// É o alvo que falta ao lado dos três de texto, e vale por um motivo
+// diferente deles. Ali a entrada é uma string e o risco é leitura fora
+// dos limites; aqui a entrada é um instante e o risco é aritmético:
+// saturação nas duas pontas, o estouro da multiplicação por mil e a
+// divisão que decide o piso na época. A suíte cobre esses pontos por
+// tabela, com valores escolhidos à mão; o fuzzing varre a faixa inteira
+// de segundos, incluindo as duas metades do inteiro com sinal, que é
+// onde o estouro troca o sinal.
+//
+// Rode com:
+//
+//	go test ./tests/ -run '^$' -fuzz FuzzInstantArithmetic -fuzztime 30s
+func FuzzInstantArithmetic(f *testing.F) {
+	f.Add(int64(0), int64(0), int64(0), int64(0))
+	f.Add(int64(1767225600), int64(123456789), int64(1767225600), int64(123456790))
+	f.Add(int64(-1), int64(999999999), int64(0), int64(0))            // travessia da época
+	f.Add(int64(1)<<48/1000, int64(0), int64(1)<<48/1000+1, int64(0)) // borda dos 48 bits
+	f.Add(int64(1)<<62, int64(0), int64(1)<<62+1, int64(0))           // estouro da multiplicação
+	f.Add(-(int64(1) << 62), int64(0), -(int64(1)<<62)+1, int64(0))   // estouro ao contrário
+	f.Add(int64(math.MaxInt64/1000), int64(999999999), int64(math.MaxInt64/1000), int64(0))
+
+	f.Fuzz(func(t *testing.T, sec1, nsec1, sec2, nsec2 int64) {
+		// time.Unix normaliza a fração, então qualquer par de entrada
+		// produz um instante válido; é justamente o que se quer varrer.
+		t1 := time.Unix(sec1, nsec1)
+		t2 := time.Unix(sec2, nsec2)
+
+		for _, level := range []uuid.Level{uuid.Level1, uuid.Level2, uuid.Level3, uuid.Level(9)} {
+			lo := uuid.MinAt(level, t1)
+			hi := uuid.MaxAt(level, t1)
+
+			// Versão e variante sobrevivem ao preenchimento, nas duas
+			// pontas e em qualquer instante. É o que torna a fronteira um
+			// limite correto.
+			for nome, u := range map[string]uuid.UUID{"MinAt": lo, "MaxAt": hi} {
+				if u.Version() != 7 {
+					t.Fatalf("nível %d, %s(%v): versão %d, esperado 7", level, nome, t1, u.Version())
+				}
+				if u.Variant() != 0b10 {
+					t.Fatalf("nível %d, %s(%v): variante %#b, esperado 10", level, nome, t1, u.Variant())
+				}
+			}
+
+			// A fronteira inferior nunca passa da superior do mesmo instante.
+			if lo.Compare(hi) > 0 {
+				t.Fatalf("nível %d, instante %v: MinAt %v acima de MaxAt %v", level, t1, lo, hi)
+			}
+
+			// O valor gerado para o instante cai dentro das fronteiras dele.
+			gerado := uuid.GenerateAt(level, t1)
+			if gerado.Compare(lo) < 0 || gerado.Compare(hi) > 0 {
+				t.Fatalf("nível %d, instante %v: GenerateAt %v fora de [%v, %v]", level, t1, gerado, lo, hi)
+			}
+
+			// Monotonicidade: instante que não regride não produz fronteira
+			// que regride. É a propriedade que a saturação por truncamento
+			// quebraria em silêncio, e a razão de a saturação levar micro e
+			// nano a 999 no teto.
+			if !t2.Before(t1) {
+				if uuid.MinAt(level, t2).Compare(lo) < 0 {
+					t.Fatalf("nível %d: instante %v não é anterior a %v, mas MinAt regrediu", level, t2, t1)
+				}
+				if uuid.MaxAt(level, t2).Compare(hi) < 0 {
+					t.Fatalf("nível %d: instante %v não é anterior a %v, mas MaxAt regrediu", level, t2, t1)
+				}
+			}
+		}
+
+		// O intervalo semiaberto nunca tem o limite superior abaixo do
+		// inferior quando os argumentos estão em ordem.
+		if !t2.Before(t1) {
+			lo, hi := uuid.RangeAt(uuid.Level3, t1, t2)
+			if lo.Compare(hi) > 0 {
+				t.Fatalf("RangeAt(%v, %v) devolveu intervalo invertido: %v acima de %v", t1, t2, lo, hi)
+			}
+		}
+	})
+}
+
+// FuzzGregorianUnixTime procura instantes gregorianos cuja conversão para
+// a época Unix devolva um par não canônico.
+//
+// O campo de tempo das versões 1 e 6 começa em 1582, portanto metade da
+// faixa representável fica antes da época Unix, e é lá que a divisão
+// truncada da linguagem devolveria resto negativo. A conversão usa
+// divisão euclidiana exatamente por isso, e esta é a varredura que prova
+// a propriedade em toda a faixa em vez de nos poucos pontos da tabela.
+//
+// Rode com:
+//
+//	go test ./tests/ -run '^$' -fuzz FuzzGregorianUnixTime -fuzztime 30s
+func FuzzGregorianUnixTime(f *testing.F) {
+	f.Add(int64(0))                      // 1582-10-15, início da época gregoriana
+	f.Add(int64(122192928000000000))     // a própria época Unix
+	f.Add(int64(122192928000000000 - 1)) // um tique antes da época Unix
+	f.Add(int64(122192928000000000 + 1)) // um tique depois
+	f.Add(int64(139865184001234567))     // instante da tabela de vetores
+	f.Add(int64(1)<<60 - 1)              // teto dos 60 bits do campo
+	f.Add(int64(math.MaxInt64))
+	f.Add(int64(math.MinInt64))
+
+	f.Fuzz(func(t *testing.T, ticks int64) {
+		g := uuid.GregorianTime(ticks)
+		sec, nsec := g.UnixTime()
+
+		// O par devolvido é canônico em toda a faixa: a fração nunca é
+		// negativa nem alcança um segundo inteiro.
+		if nsec < 0 || nsec >= 1_000_000_000 {
+			t.Fatalf("GregorianTime(%d).UnixTime() devolveu nsec %d, fora de 0..999999999", ticks, nsec)
+		}
+
+		// A resolução é a do campo, 100 ns: os dois dígitos finais da
+		// fração são sempre zero.
+		if nsec%100 != 0 {
+			t.Fatalf("GregorianTime(%d).UnixTime() devolveu nsec %d, que não é múltiplo de 100", ticks, nsec)
+		}
+
+		// O instante construído com o par tem de coincidir com o que o
+		// tipo devolve, o que só vale se o par for canônico.
+		if got, esperado := g.Time(), time.Unix(sec, nsec).UTC(); !got.Equal(esperado) {
+			t.Fatalf("GregorianTime(%d): Time() = %v, mas o par (%d, %d) dá %v", ticks, got, sec, nsec, esperado)
 		}
 	})
 }
