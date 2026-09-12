@@ -18,7 +18,7 @@
 #
 #   deep    — semanalmente e sob demanda: a suíte completa (inclui os
 #             testes de massa de 1.000.000) e campanhas curtas de fuzzing
-#             dos três alvos. Se uma campanha encontrar uma entrada que
+#             dos cinco alvos. Se uma campanha encontrar uma entrada que
 #             quebra o alvo, o corpus gravado pelo Go é publicado como
 #             artefato do job para reprodução local.
 #

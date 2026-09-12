@@ -273,6 +273,27 @@ func (u BinaryUUID) String() string {
 	return UUID(u).String()
 }
 
+// MarshalText devolve a forma canônica, como em UUID, para que o tipo
+// participe de encoding/json e encoding/gob como string.
+func (u BinaryUUID) MarshalText() ([]byte, error) {
+	return UUID(u).MarshalText()
+}
+
+// UnmarshalText lê a forma canônica, aceitando os formatos de Parse.
+func (u *BinaryUUID) UnmarshalText(data []byte) error {
+	return (*UUID)(u).UnmarshalText(data)
+}
+
+// MarshalBinary entrega os 16 bytes crus em ordem de rede.
+func (u BinaryUUID) MarshalBinary() ([]byte, error) {
+	return UUID(u).MarshalBinary()
+}
+
+// UnmarshalBinary lê exatamente 16 bytes crus em ordem de rede.
+func (u *BinaryUUID) UnmarshalBinary(data []byte) error {
+	return (*UUID)(u).UnmarshalBinary(data)
+}
+
 // NullBinaryUUID é o equivalente de NullUUID para coluna binária de 16
 // bytes que também aceita NULL.
 //
@@ -300,4 +321,34 @@ func (n NullBinaryUUID) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return BinaryUUID(n.UUID).Value()
+}
+
+// MarshalJSON grava a string canônica, ou null quando não há valor.
+func (n NullBinaryUUID) MarshalJSON() ([]byte, error) {
+	return NullUUID(n).MarshalJSON()
+}
+
+// UnmarshalJSON lê uma string JSON ou null.
+func (n *NullBinaryUUID) UnmarshalJSON(data []byte) error {
+	return (*NullUUID)(n).UnmarshalJSON(data)
+}
+
+// MarshalText grava a string canônica, ou vazio quando não há valor.
+func (n NullBinaryUUID) MarshalText() ([]byte, error) {
+	return NullUUID(n).MarshalText()
+}
+
+// UnmarshalText lê a string canônica; vazio produz ausência.
+func (n *NullBinaryUUID) UnmarshalText(data []byte) error {
+	return (*NullUUID)(n).UnmarshalText(data)
+}
+
+// MarshalBinary grava os 16 bytes, ou nada quando não há valor.
+func (n NullBinaryUUID) MarshalBinary() ([]byte, error) {
+	return NullUUID(n).MarshalBinary()
+}
+
+// UnmarshalBinary lê 16 bytes; vazio produz ausência.
+func (n *NullBinaryUUID) UnmarshalBinary(data []byte) error {
+	return (*NullUUID)(n).UnmarshalBinary(data)
 }

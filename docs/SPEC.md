@@ -438,6 +438,17 @@ A geração de UUIDs baseados em tempo requer sincronização segura:
      biblioteca **avança o relógio interno em 1 tique (+100 ns) por
      geração**, em vez de bloquear em espera (*sleep*).
    - Isso garante ordenação estrita e unicidade absoluta mesmo em
+**Armadilha de estouro.** O tipo de tempo gregoriano é um inteiro com
+sinal de 64 bits e é público: um chamador pode construí-lo a partir de
+dados externos não validados. Quando o valor é menor que
+`MinInt64 + gregorianOffset` (aproximadamente −9,10 × 10¹⁸), a
+subtração do passo 1 estoura o inteiro com sinal e produz um resultado
+positivo grande, mapeando para um instante no futuro distante (~ano
+30.800) sem qualquer erro. A implementação **DEVE** saturar: se o valor
+cai abaixo do limiar, o cálculo parte de `MinInt64`, devolvendo o menor
+instante representável em vez de girar para o futuro. Este padrão é o
+mesmo da saturação nas fronteiras da seção 3.5.
+
      geração massiva sob lock.
 2. **Regra Anti-Repetição em `SetNodeID` (Evitando Repetição de UUID)**:
    - Uma falha comum em implementações é resetar o último instante
@@ -919,7 +930,11 @@ nas seções 3.5 e 3.6.
      para outras ferramentas.
    - Fornecer um tipo `NullUUID` contendo o UUID e um booleano `Valid`
      para campos de tabela que permitem valor `NULL`, e o equivalente
-     para a escrita binária.
+     para a escrita binária. O equivalente binário anulável **DEVE
+     implementar as mesmas interfaces de serialização** que o anulável
+     padrão (`MarshalJSON`, `UnmarshalJSON`, `MarshalText`,
+     `UnmarshalText`, `MarshalBinary`, `UnmarshalBinary`), para que a
+     tabela normativa de ausência abaixo se aplique igualmente a ambos.
    - **Ausência de valor e UUID nulo são valores distintos** e **NÃO
      DEVEM** colapsar um no outro. Com o booleano falso a escrita produz
      `NULL`; dezesseis bytes zerados só saem com o booleano verdadeiro e
@@ -941,6 +956,12 @@ nas seções 3.5 e 3.6.
      o contrário, falha na desserialização, e é por isso que a tabela é
      normativa. Entrada inválida devolve erro e deixa o booleano falso.
 3. **Valores Especiais**:
+   - O tipo de escrita binária **DEVE implementar as mesmas interfaces de
+     serialização** que o tipo padrão (`MarshalText`, `UnmarshalText`,
+     `MarshalBinary`, `UnmarshalBinary`), delegando para a implementação
+     do tipo base. Sem esses métodos, `encoding/json` serializaria o
+     valor como vetor de 16 números inteiros em vez da string canônica,
+     violando a regra 1 desta seção.
    - `Nil`: todos os 16 bytes em zero (`00000000-0000-0000-0000-000000000000`).
    - `Max`: todos os 16 bytes em `0xFF` (`ffffffff-ffff-ffff-ffff-ffffffffffff`).
    - `Compare(a, b)`: comparação byte a byte em ordem lexicográfica
@@ -995,7 +1016,12 @@ reais:
        é anterior ao primeiro.
      - **Conversão gregoriana inversa**: recebe um instante gregoriano em
        toda a faixa do inteiro com sinal e exige o par canônico, com a
-       fração entre zero e um segundo e múltipla de 100 ns.
+       fração entre zero e um segundo e múltipla de 100 ns. **DEVE**
+       também detectar estouro: para qualquer entrada negativa, o
+       resultado em segundos não pode ser positivo e astronômico
+       (indicando que a subtração do deslocamento gregoriano deu a
+       volta em inteiro com sinal). Semear o limiar exato de saturação
+       e sua vizinhança (um abaixo e um acima).
 3. **Bordas Temporais Extremas**:
    - Testar instantes com data anterior a 1970 (ex.: ano 1969 e ano 1800).
    - O caso pré-1970 **DEVE** usar um segundo negativo com fração
@@ -1407,3 +1433,4 @@ Toda decisão de projeto — inclusive a recusa de uma proposta — entra
 **nesta seção** e no histórico de mudanças, com a data e o motivo. Uma
 proposta recusada sem registro volta na auditoria seguinte, e o custo de
 reavaliá-la é pago de novo.
+| **A conversão gregoriana inversa satura entradas abaixo do limiar de estouro**, em vez de deixar a subtração do deslocamento gregoriano girar o inteiro com sinal para o futuro. | 2026-09-12 | O tipo `GregorianTime` é público e aceita qualquer `int64`. Valores abaixo de `MinInt64 + gregorianOffset` fazem a subtração estourar e produzem silenciosamente um instante no futuro distante (~ano 30.800). O campo de 60 bits dos UUIDs v1/v6 nunca produz tais valores, mas um chamador que construa `GregorianTime` a partir de dados externos pode atingir a condição. A saturação segue o padrão de `saturatedInstant` (seção 3.5) e custa uma comparação num caminho que não é quente. | Nada previsto: a alternativa é aceitar resultado absurdo em silêncio. |

@@ -286,6 +286,10 @@ func FuzzGregorianUnixTime(f *testing.F) {
 	f.Add(int64(1)<<60 - 1)              // teto dos 60 bits do campo
 	f.Add(int64(math.MaxInt64))
 	f.Add(int64(math.MinInt64))
+	// Limiar exato de saturação e vizinhança.
+	f.Add(int64(math.MinInt64) + int64(122192928000000000))     // minGregorianTicks
+	f.Add(int64(math.MinInt64) + int64(122192928000000000) - 1) // um abaixo: satura
+	f.Add(int64(math.MinInt64) + int64(122192928000000000) + 1) // um acima: não satura
 
 	f.Fuzz(func(t *testing.T, ticks int64) {
 		g := uuid.GregorianTime(ticks)
@@ -301,6 +305,15 @@ func FuzzGregorianUnixTime(f *testing.F) {
 		// fração são sempre zero.
 		if nsec%100 != 0 {
 			t.Fatalf("GregorianTime(%d).UnixTime() devolveu nsec %d, que não é múltiplo de 100", ticks, nsec)
+		}
+
+		// Detecção de estouro: se o ticks de entrada é negativo, sec
+		// não pode ser positivo e astronômico. O limiar de 1e15 (~ano
+		// 31.700.000+) está muito acima de qualquer instante legítimo.
+		// Se sec ultrapassar isso com ticks negativo, a subtração de
+		// gregorian100ns estourou int64 e girou para o futuro.
+		if ticks < 0 && sec > 1e15 {
+			t.Fatalf("GregorianTime(%d).UnixTime() devolveu sec %d: provável estouro de int64", ticks, sec)
 		}
 
 		// O instante construído com o par tem de coincidir com o que o

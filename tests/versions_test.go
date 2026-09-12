@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -701,6 +702,51 @@ func TestGregorianUnixTimeBeforeEpochIsCanonical(t *testing.T) {
 		}
 		if ts, ok := u.Timestamp(); !ok || !ts.Equal(want) {
 			t.Errorf("%s: Timestamp = %v (ok %v), esperado %v", name, ts, ok, want)
+		}
+	}
+}
+
+// TestGregorianUnixTimeOverflowSaturation confere que valores de
+// GregorianTime abaixo do limiar minGregorianTicks não causam estouro de
+// int64 (o que devolveria um instante futuro no ano ~30.800), mas sim
+// saturam no piso representável por math.MinInt64.
+func TestGregorianUnixTimeOverflowSaturation(t *testing.T) {
+	const gregorian100ns = int64(122_192_928_000_000_000)
+	const minGregorianTicks = math.MinInt64 + gregorian100ns
+
+	// Instante saturado: piso de math.MinInt64.
+	// -9223372036854775808 / 10000000 = -922337203685, rem = -4775808 -> sec = -922337203686, nsec = 522419200
+	const wantSec = int64(-922_337_203_686)
+	const wantNsec = int64(522_419_200)
+
+	cases := []struct {
+		name string
+		g    uuid.GregorianTime
+		sec  int64
+		nsec int64
+	}{
+		{"mínimo absoluto int64", uuid.GregorianTime(math.MinInt64), wantSec, wantNsec},
+		{"um abaixo do limiar (satura)", uuid.GregorianTime(minGregorianTicks - 1), wantSec, wantNsec},
+		{"limiar exato (não satura)", uuid.GregorianTime(minGregorianTicks), wantSec, wantNsec},
+		{"um acima do limiar (não satura)", uuid.GregorianTime(minGregorianTicks + 1), wantSec, wantNsec + 100},
+	}
+
+	for _, c := range cases {
+		sec, nsec := c.g.UnixTime()
+		if sec != c.sec || nsec != c.nsec {
+			t.Errorf("%s: UnixTime = (%d, %d), esperado (%d, %d)", c.name, sec, nsec, c.sec, c.nsec)
+		}
+		if nsec < 0 || nsec >= 1_000_000_000 {
+			t.Errorf("%s: nanossegundos %d fora da faixa canônica", c.name, nsec)
+		}
+		if nsec%100 != 0 {
+			t.Errorf("%s: nanossegundos %d não é múltiplo de 100", c.name, nsec)
+		}
+		if sec > 0 {
+			t.Errorf("%s: sec %d é positivo (estouro de int64)", c.name, sec)
+		}
+		if got, want := c.g.Time(), time.Unix(sec, nsec).UTC(); !got.Equal(want) {
+			t.Errorf("%s: Time() = %v, esperado %v", c.name, got, want)
 		}
 	}
 }

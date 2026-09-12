@@ -85,8 +85,10 @@ go-loghub-uuid/
     ├── construct_test.go       # geração por instante explícito: GenerateAt
     ├── binary_sql_test.go      # BinaryUUID e NullBinaryUUID
     ├── golden_test.go          # vetores dourados: extensão multinível e versões 1, 2 e 6
+    ├── binary_serialization_test.go # serialização JSON, texto e binário dos tipos binários
     ├── clockstate_test.go      # isolamento do nó e da sequência entre testes
-    ├── fuzz_test.go            # FuzzFromString, FuzzParse e FuzzNullUUIDJSON
+    ├── fuzz_test.go            # FuzzFromString, FuzzParse, FuzzNullUUIDJSON,
+    │                            # FuzzInstantArithmetic e FuzzGregorianUnixTime
     ├── benchmark_test.go       # benchmarks + massa de 1.000.000
     ├── benchmark-bulk/
     │   └── main.go             # executável: go run ./tests/benchmark-bulk
@@ -225,8 +227,13 @@ própria, independente do caminho do UUIDv7.
   serializações em JSON, texto e binário.
 - `BinaryUUID` — mesmo UUID, gravado como 16 bytes crus em vez da string
   canônica. Para `BINARY(16)` e `BLOB`, onde não há tipo nativo de UUID.
-  A conversão é no ponto da consulta: `uuid.BinaryUUID(u)`.
-- `NullBinaryUUID` — o mesmo, para coluna que também aceita `NULL`.
+  A conversão é no ponto da consulta: `uuid.BinaryUUID(u)`. Tem
+  `MarshalText`/`UnmarshalText` e `MarshalBinary`/`UnmarshalBinary`,
+  delegando para `UUID`, para que `encoding/json` grave a string
+  canônica e não um vetor de 16 números.
+- `NullBinaryUUID` — o mesmo, para coluna que também aceita `NULL`, com
+  `Scan`, `Value` e as serializações em JSON, texto e binário,
+  espelhando `NullUUID`.
 
 > `Value` de `UUID` continua gravando texto e não vai mudar: misturar os
 > dois formatos na mesma coluna faria as linhas antigas sumirem das

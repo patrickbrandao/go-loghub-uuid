@@ -2,6 +2,7 @@ package loghubuuid
 
 import (
 	crand "crypto/rand"
+	"math"
 	"sync"
 	"time"
 )
@@ -23,6 +24,11 @@ const (
 
 	// gregorian100ns é a mesma distância, em intervalos de 100 nanossegundos.
 	gregorian100ns = gregorianSeconds * 10_000_000
+
+	// minGregorianTicks é o menor valor de GregorianTime para o qual a
+	// subtração de gregorian100ns não estoura int64. Valores abaixo deste
+	// limiar são saturados no piso representável por UnixTime.
+	minGregorianTicks = math.MinInt64 + gregorian100ns
 )
 
 // GregorianTime conta intervalos de 100 nanossegundos desde 15/10/1582.
@@ -40,8 +46,20 @@ type GregorianTime int64
 // para o mesmo instante, mas quem consome sec e nsec diretamente não
 // deve receber resto negativo. A resolução é a do campo, 100 ns: os dois
 // dígitos finais de nsec são sempre zero. Ver docs/SPEC.md seção 4.1.
+//
+// Valores fora do domínio do campo (0 .. 2^60-1) são aceitos, mas
+// saturados: se int64(t) < minGregorianTicks, a subtração estouraria
+// int64 e o resultado daria a volta para o futuro distante; nesse caso
+// o cálculo parte de math.MinInt64, devolvendo o menor instante
+// representável em vez de um valor absurdo. O custo é uma comparação
+// que o preditor de desvios elimina no caso comum.
 func (t GregorianTime) UnixTime() (sec, nsec int64) {
-	ticks := int64(t) - gregorian100ns
+	ticks := int64(t)
+	if ticks < minGregorianTicks {
+		ticks = math.MinInt64
+	} else {
+		ticks -= gregorian100ns
+	}
 	sec = ticks / 10_000_000
 	rem := ticks % 10_000_000
 	if rem < 0 {
