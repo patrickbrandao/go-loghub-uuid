@@ -219,7 +219,7 @@ go list -m all
 
 A saída tem de ser uma linha só, o próprio módulo.
 
-O escopo é **comportamento, não velocidade**. Há três testes:
+O escopo é **comportamento, não velocidade**. Há cinco testes:
 
 - `TestGoogleRepeatsV1OnSequenceReturn` reproduz a repetição de UUIDv1
   do outro pacote quando o chamador sai de uma sequência de relógio e
@@ -231,6 +231,18 @@ O escopo é **comportamento, não velocidade**. Há três testes:
 - `TestClockAdvanceDiffersBetweenLibraries` mede as duas escolhas de
   projeto lado a lado: o outro pacote não adianta o relógio e incrementa
   a sequência, esta adianta o relógio e mantém a sequência.
+- `TestGoogleReadsGregorianGoldenVectors` submete os vetores dourados
+  das versões 1 e 2 (`docs/SPEC.md` seção 10, caso 18) ao leitor do
+  outro pacote e exige os mesmos campos: instante, sequência, nó,
+  domínio e identificador. São os mesmos bytes lidos por dois leitores
+  independentes.
+- `TestGoogleV6LayoutDiffersFromRFC9562` mede por que a versão 6 fica
+  fora dessa conferência: na v1.6.0 o outro pacote grava o carimbo de 64
+  bits inteiro nos bytes 0 a 7 e sobrepõe a versão, o que não é a ordem
+  de campos da RFC 9562 §5.6. Lido pela ordem da RFC, o UUIDv6 dele cai
+  séculos atrás do relógio. Se esse teste falhar por o instante passar a
+  bater, o pacote corrigiu o layout e a documentação precisa ser
+  atualizada.
 
 **Não há tabela de benchmark comparativo, por decisão.** Ela envelheceria
 a cada versão do pacote de terceiros, exigiria medir dois pares de fonte

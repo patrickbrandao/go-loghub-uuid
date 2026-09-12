@@ -81,11 +81,18 @@ go-loghub-uuid/
     ├── ordering_test.go        # ordenação, unicidade e concorrência
     ├── robustness_test.go      # bordas do Generator e consumo de entropia
     ├── alloc_test.go           # trava de zero alocações
+    ├── bounds_test.go          # fronteiras de tempo: MinAt, MaxAt e RangeAt
+    ├── construct_test.go       # geração por instante explícito: GenerateAt
+    ├── binary_sql_test.go      # BinaryUUID e NullBinaryUUID
+    ├── golden_test.go          # vetores dourados: extensão multinível e versões 1, 2 e 6
     ├── clockstate_test.go      # isolamento do nó e da sequência entre testes
     ├── fuzz_test.go            # FuzzFromString, FuzzParse e FuzzNullUUIDJSON
     ├── benchmark_test.go       # benchmarks + massa de 1.000.000
-    └── benchmark-bulk/
-        └── main.go             # executável: go run ./tests/benchmark-bulk
+    ├── benchmark-bulk/
+    │   └── main.go             # executável: go run ./tests/benchmark-bulk
+    └── compare/                # módulo aninhado (go.mod próprio): comparação com github.com/google/uuid
+        ├── clockfloor_test.go  # piso de relógio por sequência, lado a lado
+        └── golden_test.go      # vetores v1/v2 lidos pelo outro pacote; layout v6 dele medido
 ```
 
 A **raiz** contém apenas o necessário para usar a biblioteca em produção
