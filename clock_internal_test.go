@@ -81,7 +81,16 @@ func TestSequenceFloorSurvivesRoundTrip(t *testing.T) {
 	defer clockMu.Unlock()
 	defer setClockSequenceLocked(-1)
 
-	const seqA, seqB = 0x0AAA, 0x0BBB
+	// O roteiro exige que seqA e seqB sejam inéditas. Em ordem embaralhada,
+	// um teste anterior pode ter sorteado uma delas: se alguma estiver em
+	// uso, sai para uma terceira, e o histórico das duas é apagado.
+	const seqA, seqB, seqC = 0x0AAA, 0x0BBB, 0x0CCC
+	if clockSeq == seqA|0x8000 || clockSeq == seqB|0x8000 {
+		setClockSequenceLocked(seqC)
+	}
+	delete(seqLastTime, seqA|0x8000)
+	delete(seqLastTime, seqB|0x8000)
+
 	n := time.Now()
 	ahead := gregorianFromUnix(n.Unix(), int64(n.Nanosecond())) + 10_000_000 // +1 s
 
@@ -122,14 +131,29 @@ func TestSequenceFloorSurvivesRoundTrip(t *testing.T) {
 
 // TestUnusedSequenceSkipsUsedOnes confere que o sorteio de sequência
 // inédita nunca devolve uma sequência em uso ou já usada no processo.
+//
+// A ordem importa: a troca para freeA vem ANTES de montar o mapa, porque
+// trocar de sequência grava no mapa o piso da sequência que sai. Com o
+// mapa montado antes, bastava a limpeza do teste anterior ter sorteado
+// por acaso freeB (probabilidade de 1 em 16.384 por execução) para freeB
+// passar a constar como usada: o sorteio não achava nenhuma livre e
+// devolvia o valor aleatório inicial. Foi o que derrubou o CI em
+// 2026-09-12. A limpeza fica em um único defer para rodar também quando o
+// teste falha, sem deixar o mapa cheio para o teste seguinte.
 func TestUnusedSequenceSkipsUsedOnes(t *testing.T) {
 	clockMu.Lock()
-	defer clockMu.Unlock()
-	defer setClockSequenceLocked(-1)
+	defer func() {
+		seqLastTime = nil
+		setClockSequenceLocked(-1)
+		clockMu.Unlock()
+	}()
 
-	// Marca como usadas todas as sequências menos duas, para que o sorteio
-	// quase sempre precise avançar até uma livre.
 	const freeA, freeB = 0x1234, 0x2345
+	setClockSequenceLocked(freeA) // freeA passa a estar em uso; o piso de quem sai vai para o mapa antigo
+
+	// Marca como usadas todas as sequências menos as duas livres, para que
+	// o sorteio quase sempre precise avançar até a única que não está em
+	// uso.
 	seqLastTime = make(map[uint16]uint64, 1<<14)
 	for s := 0; s < 1<<14; s++ {
 		if s == freeA || s == freeB {
@@ -137,7 +161,6 @@ func TestUnusedSequenceSkipsUsedOnes(t *testing.T) {
 		}
 		seqLastTime[uint16(s)|0x8000] = 1
 	}
-	setClockSequenceLocked(freeA) // freeA passa a estar em uso
 
 	for i := 0; i < 20; i++ {
 		got := unusedSequenceLocked()
@@ -151,7 +174,6 @@ func TestUnusedSequenceSkipsUsedOnes(t *testing.T) {
 	if got := unusedSequenceLocked(); got < 0 || got > 0x3FFF {
 		t.Fatalf("sorteio com todas as sequências usadas devolveu %#x, fora de 14 bits", got)
 	}
-	seqLastTime = nil
 }
 
 // TestClockSequenceInitializesOnFirstUse cobre a inicialização tardia da

@@ -379,6 +379,27 @@ carimbos anteriores a 1970, descrita em "Alterado".
   asserção contra a volta do inteiro. (`clock.go`,
   `tests/versions_test.go`, `tests/fuzz_test.go`)
 
+- **Dois testes internos da sequência de relógio dependiam do acaso**, e
+  o job `test` do CI ficou vermelho em `a335738` (Go estável) por isso,
+  com a suíte idêntica verde no Go 1.22 e em todas as execuções locais.
+  `TestUnusedSequenceSkipsUsedOnes` montava o mapa de sequências usadas
+  antes de trocar para a sequência do roteiro, e a troca grava no mapa o
+  piso da sequência que sai: quando a limpeza do teste anterior sorteava
+  por acaso a única sequência que o roteiro queria livre — probabilidade
+  de 1 em 16.384 por execução —, ela passava a constar como usada, o
+  sorteio não achava nenhuma livre e devolvia o valor aleatório inicial.
+  O `t.Fatalf` derrubava o teste antes da linha que zerava o mapa, e
+  `TestClockSequenceInitializesOnFirstUse`, logo a seguir, herdava o
+  mapa cheio e lia piso 1 para a sequência "inédita". O mecanismo foi
+  reproduzido de forma determinística forçando a sequência azarada antes
+  do teste, e as duas falhas do CI apareceram iguais. A troca agora vem
+  antes de montar o mapa, a limpeza fica em um único `defer` e roda
+  também quando o teste falha, e `TestSequenceFloorSurvivesRoundTrip`
+  passou a garantir que as suas duas sequências estejam inéditas em
+  qualquer ordem de execução. A biblioteca não tinha defeito: gravar o
+  piso de quem sai é exatamente a invariante de unicidade.
+  (`clock_internal_test.go`)
+
 - **A explicação de como o pacote `github.com/google/uuid` repete um
   UUIDv1 estava errada**, em `docs/SPEC.md` seção 4.2 e no `CLAUDE.md`.
   O texto dizia que a repetição vinha de **adiantamento acumulado**: uma
