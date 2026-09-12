@@ -766,3 +766,123 @@ func TestNewHashMatchesGenerateHash(t *testing.T) {
 		t.Errorf("NewHash com resumo curto divergiu de GenerateHash: %s vs %s", got, short)
 	}
 }
+
+// TestErrorTaxonomy percorre a tabela da seção 6.4 da especificação
+// (caso obrigatório 17): cada entrada produz o erro descrito, reconhecido
+// pelo tipo e não só pela presença; o UUID devolvido é o nulo; o
+// analisador estrito e Import devolvem exatamente o sentinela; e a
+// assimetria registrada do prefixo URN, que devolve o sentinela enquanto
+// as chaves malformadas têm erro próprio, fica travada.
+func TestErrorTaxonomy(t *testing.T) {
+	// classe reduz um erro à linha da tabela a que ele pertence.
+	classe := func(err error) string {
+		switch {
+		case err == nil:
+			return "nenhum"
+		case uuid.IsInvalidLengthError(err):
+			return "comprimento"
+		case errors.Is(err, uuid.ErrInvalidBrackets):
+			return "chaves"
+		case err == uuid.ErrInvalidFormat: //nolint:errorlint // o sentinela puro é o próprio contrato testado
+			return "sentinela puro"
+		case errors.Is(err, uuid.ErrInvalidFormat):
+			return "formato embrulhado"
+		}
+		return "outro"
+	}
+
+	const compact = "0192f7c51a2b7c3d8e4faabbccddeeff"
+	cases := []struct {
+		name  string
+		input string
+		want  string // classe esperada do analisador permissivo
+	}{
+		{"comprimento errado", "abc", "comprimento"},
+		{"comprimento 37", canonical + "0", "comprimento"},
+		{"vazio", "", "comprimento"},
+		{"chaves trocadas", "(" + canonical + ")", "chaves"},
+		{"chave de fechamento ausente", "{" + canonical + "0", "chaves"},
+		{"prefixo URN inválido", "urn:uiid:" + canonical, "sentinela puro"},
+		{"prefixo URN de outro esquema", "urn:isbn:" + canonical, "sentinela puro"},
+		{"dígito inválido na forma canônica", canonical[:35] + "g", "sentinela puro"},
+		{"hífen fora de lugar", "0192f7c5-1a2b-7c3d-8e4faabbccddeeff-", "sentinela puro"},
+		{"dígito inválido na forma crua", compact[:31] + "g", "sentinela puro"},
+		{"dígito inválido entre chaves", "{" + canonical[:35] + "g}", "sentinela puro"},
+		{"dígito inválido na URN", "urn:uuid:" + canonical[:35] + "g", "sentinela puro"},
+	}
+	reference := uuid.MustParse(canonical)
+	for _, c := range cases {
+		got, err := uuid.Parse(c.input)
+		if classe(err) != c.want {
+			t.Errorf("%s: Parse(%q) devolveu %v (%s), esperado %s", c.name, c.input, err, classe(err), c.want)
+		}
+		if !got.IsZero() {
+			t.Errorf("%s: Parse devolveu %s junto do erro, esperado o UUID nulo", c.name, got)
+		}
+		if _, err := uuid.ParseBytes([]byte(c.input)); classe(err) != c.want {
+			t.Errorf("%s: ParseBytes devolveu %v (%s), esperado %s", c.name, err, classe(err), c.want)
+		}
+		if err := uuid.Validate(c.input); classe(err) != c.want {
+			t.Errorf("%s: Validate devolveu %v (%s), esperado %s", c.name, err, classe(err), c.want)
+		}
+
+		// A desserialização de texto classifica como Parse e não altera o
+		// receptor.
+		u := reference
+		if err := u.UnmarshalText([]byte(c.input)); classe(err) != c.want || u != reference {
+			t.Errorf("%s: UnmarshalText devolveu %v (%s) e deixou %s; esperado %s sem alterar o receptor",
+				c.name, err, classe(err), u, c.want)
+		}
+
+		// O analisador estrito e Import devolvem sempre o sentinela puro.
+		if _, err := uuid.FromString(c.input); classe(err) != "sentinela puro" {
+			t.Errorf("%s: FromString devolveu %v (%s), esperado o sentinela puro", c.name, err, classe(err))
+		}
+		if tm, err := uuid.Import(c.input); classe(err) != "sentinela puro" || tm != (uuid.Time{}) {
+			t.Errorf("%s: Import devolveu %+v com %v (%s), esperado estrutura zerada e o sentinela puro",
+				c.name, tm, err, classe(err))
+		}
+	}
+
+	// Construção e desserialização binária: comprimento inválido.
+	if _, err := uuid.FromBytes(reference[:15]); classe(err) != "comprimento" {
+		t.Errorf("FromBytes com 15 bytes: %v (%s), esperado comprimento inválido", err, classe(err))
+	}
+	u := reference
+	if err := u.UnmarshalBinary(reference[:15]); classe(err) != "comprimento" || u != reference {
+		t.Errorf("UnmarshalBinary com 15 bytes: %v (%s) e deixou %s; esperado comprimento inválido sem alterar o receptor",
+			err, classe(err), u)
+	}
+
+	// JSON do tipo anulável: valor que não é string, ou sintaxe inválida,
+	// devolve o sentinela puro; string recusada devolve o erro de Parse.
+	for _, c := range []struct {
+		name, input, want string
+	}{
+		{"número no lugar da string", `42`, "sentinela puro"},
+		{"objeto no lugar da string", `{}`, "sentinela puro"},
+		{"string sem fechar", `"abc`, "sentinela puro"},
+		{"string curta", `"abc"`, "comprimento"},
+		{"string com chaves trocadas", `"(` + canonical + `)"`, "chaves"},
+		{"string com prefixo URN inválido", `"urn:uiid:` + canonical + `"`, "sentinela puro"},
+		{"string com escape e dígito inválido", `"0192f7c5-1a2b-7c3d-8e4f-aabbccddeefg"`, "sentinela puro"},
+	} {
+		n := uuid.NullUUID{UUID: reference, Valid: true}
+		if err := n.UnmarshalJSON([]byte(c.input)); classe(err) != c.want || n.UUID != reference || !n.Valid {
+			t.Errorf("NullUUID.UnmarshalJSON(%s): %v (%s) e deixou %+v; esperado %s sem alterar o receptor",
+				c.name, err, classe(err), n, c.want)
+		}
+	}
+
+	// Tipo não suportado e fonte de entropia são famílias à parte: não
+	// são erros de formato.
+	if err := u.Scan(3.14); !errors.Is(err, uuid.ErrInvalidScanType) || classe(err) != "outro" {
+		t.Errorf("Scan de float: %v (%s), esperado ErrInvalidScanType fora da família de formato", err, classe(err))
+	}
+	if classe(uuid.ErrEntropySource) != "outro" {
+		t.Error("ErrEntropySource não deveria ser reconhecido como erro de formato")
+	}
+	if _, err := uuid.NewV7FromReader(nil); !errors.Is(err, uuid.ErrEntropySource) {
+		t.Errorf("NewV7FromReader(nil): %v, esperado ErrEntropySource", err)
+	}
+}

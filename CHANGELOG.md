@@ -402,6 +402,104 @@ Convenções de cada seção:
   mudar de lugar, incluindo uma verificação de que a tabela não perdeu
   linhas e outra de que um instante pré-época produz exatamente os
   vetores da própria época.
+- **Auditoria de suficiência de `docs/SPEC.md` (2026-09-12): nove
+  lacunas fechadas.** A pergunta auditada foi se a especificação basta
+  para reimplementar a biblioteca do zero. O veredito foi que ela bastava
+  para o **formato** e não para a **biblioteca**: 57 dos 114 símbolos
+  exportados não apareciam nela por nome, o que é aceitável por decisão
+  (o texto é agnóstico de linguagem), mas nove comportamentos não
+  estavam em documento nenhum e viviam só em comentário de código, neste
+  histórico ou em asserção de teste. Cada item fechou com as três
+  escritas da regra do projeto: a regra normativa na seção certa, o caso
+  de teste na seção 10 (que passou de 12 para 20 casos) e o registro na
+  seção 11 quando houve decisão.
+  - **Extração completa fora da seção 7** (`import.go`). `ImportBinary`,
+    `Import` e a estrutura de quatro campos não estavam na
+    especificação, e a leitura cega de nível só aparecia de passagem,
+    como pressuposto dentro da decisão sobre o contador. A seção 7 ganhou
+    o item, com o recorte segundo/fração como decisão de contrato e a
+    leitura cega como regra normativa; o caso 13 publica o vetor de
+    `tests/import_test.go`, cujo comentário dizia `1728000000043` para
+    `0x0192f7c51a2b`. O valor certo é `1730733742635`, e o comentário
+    foi corrigido: o teste calcula a partir da constante e sempre esteve
+    certo, e o relatório da auditoria tinha copiado o número errado.
+  - **Descarte por faixa não escrito** (`inspect.go`). A seção 7 dizia que
+    `TimestampWithLevel` recupera os campos "caso o nível informado
+    tenha embutido esses dados", condição sobre o nível, quando o código
+    decide sobre a **faixa do valor lido** e, no Nível 3, descarta os
+    dois campos juntos. As duas regras viraram normativas, com a remissão
+    cruzada para a extração cega, que adota a política oposta de
+    propósito; caso 14 na seção 10.
+  - **Gerador de valor zero sem regra** (`uuid.go`, `construct.go`,
+    `version4.go`). A seção 5.2 mandava "falhar alto" em termos
+    absolutos, e o gerador sem fonte, que recorre ao padrão, era a única
+    exceção não escrita. A seção passou a ter três casos: falha da fonte
+    (pânico), configuração inválida explícita (pânico na construção) e
+    construção omitida (fonte padrão). `tests/robustness_test.go` passou a
+    exercitar também as versões 4 e 8 no gerador zerado, que só estavam
+    cobertas por inspeção do código; caso 15.
+  - **Travas de alocação sem caso de teste** (`tests/alloc_test.go`). Zero
+    alocação era objetivo da seção 1 sem nenhum caso obrigatório na
+    seção 10. O caso 16 lista as operações por função, a exceção única
+    da conversão para texto, a medição sem detector de corrida e a
+    proibição de relaxar o limite, que até aqui só o `CLAUDE.md` dizia.
+    A trava do analisador permissivo ganhou o quarto formato, o
+    hexadecimal cru, que faltava para o texto ser verdadeiro.
+  - **Taxonomia de erros sem mapa de entrada** (`parse.go`, `sql.go`,
+    `entropy.go`, `encoding.go`). A especificação decidia o princípio
+    (estrito devolve o sentinela puro, permissivo devolve erros
+    embrulhados) mas não dizia qual entrada produz qual erro. A seção 6.4
+    traz a tabela normativa, inclusive para as desserializações e o
+    banco, e registra a assimetria do prefixo URN, que devolve o
+    sentinela enquanto as chaves malformadas têm erro próprio.
+    `tests/api_test.go` ganhou `TestErrorTaxonomy`, que percorre a
+    tabela; caso 17.
+  - **Sem vetor fixo para v1, v2 e v6** (`version1.go`, `version2.go`).
+    A reordenação de bits da versão 6 estava fixada só em prosa, e a
+    ordenação crescente não substitui vetor: um deslocamento errado por
+    uma casa, aplicado igualmente na geração e na leitura, passa em toda
+    a suíte e produz um identificador ilegível para qualquer outra
+    implementação. O caso 18 publica seis vetores (dois instantes, três
+    versões) com sequência, nó, domínio e identificador fixos,
+    calculados por um programa escrito a partir das fórmulas da seção
+    4.1 e conferidos na versão 1 contra a biblioteca padrão do Python.
+    `tests/golden_test.go` trava a leitura de cada vetor e a geração por
+    reempacotamento independente; `tests/compare/golden_test.go` confere
+    a leitura das versões 1 e 2 contra o pacote do Google e **mede** que
+    o UUIDv6 dele, na v1.6.0, não segue a ordem de campos da RFC 9562
+    §5.6 (o carimbo de 64 bits vai inteiro nos bytes 0 a 7, com a versão
+    sobreposta), motivo de a versão 6 não ter verificação externa.
+  - **Conversão gregoriana só na ida** (`clock.go`). A seção 4.1 tinha a
+    fórmula de Unix para gregoriano e nada da volta, que a leitura das
+    versões 1 e 6 precisa; a implementação dependia de `time.Unix`
+    normalizar o resto negativo. A seção ganhou a conversão inversa por
+    divisão euclidiana com a armadilha de linguagem explicada, o código
+    passou a devolver o par canônico (ver Alterado) e
+    `tests/versions_test.go` ganhou os vetores pré-1970, o único caso
+    que distingue as duas divisões; caso 19.
+  - **Lacunas menores de contrato** (`values.go`, `version2.go`, `sql.go`,
+    `clock.go`). Quatro comportamentos públicos sem registro: os rótulos
+    de texto (com a fusão dos códigos de variante 0 e 1 e a ambiguidade
+    do código 3), a ausência de valor por formato no tipo anulável
+    (`NULL`, `null`, vazio, vazio), os atalhos da versão 2 pelo usuário e
+    grupo do processo com a advertência de `0xFFFFFFFF` em Windows, e a
+    recusa observável de `SetNodeID` com menos de seis bytes. Entraram
+    nas seções 4.2, 4.3, 7 e 8; caso 20.
+  - **Incoerência do piso na seção 3.2**. A regra decidia o piso sobre os
+    segundos, o caminho quente decide sobre o milissegundo, e a fórmula
+    de decomposição usava conversão sem sinal, que em C ou Rust anularia
+    a guarda se transcrita ao pé da letra. O texto passou a exigir a
+    verificação de sinal antes de qualquer conversão sem sinal, aceita as
+    duas formas de piso como equivalentes, e estende a regra de decidir
+    antes da multiplicação às duas pontas; o caso 3 ganhou a entrada
+    discriminante. Nenhum código mudou.
+  - `STARTHERE.md` lista os arquivos de teste que faltavam na árvore
+    (`golden_test.go`, `bounds_test.go`, `construct_test.go`,
+    `binary_sql_test.go` e `compare/`); `docs/TEST-AND-BENCHMARK.md`
+    descreve os dois testes novos do módulo de comparação;
+    `docs/MIGRATION.md` registra a diferença de `UnixTime` antes de 1970;
+    `CLAUDE.md` aponta para os vetores das versões de tempo gregoriano e
+    para a política de leitura em duas operações.
 
 ### Decisões
 
@@ -482,6 +580,41 @@ Convenções de cada seção:
   biblioteca inteira. A `v0.x` existe para a superfície assentar, e
   quadruplicar a superfície de geração do UUIDv7 de uma vez ia na direção
   contrária. Registrado na seção 11.3.
+- **As duas leituras de tempo do UUIDv7 não serão unificadas.** A
+  extração completa (`ImportBinary`/`Import`) é cega quanto ao nível e a
+  leitura por nível (`TimestampWithLevel`) descarta por faixa, de
+  propósito: uma entrega os bits, a outra entrega um instante. Unificar
+  tiraria do chamador a única leitura que devolve os campos crus e
+  mudaria o resultado público das duas. Registrado na seção 11.3.
+- **O gerador sem fonte recorre ao padrão; fonte nula na construção
+  entra em pânico.** A seção 5.2 separa os três casos, e a seção 11.3
+  registra por que o valor zero não é falha de fonte: a fonte padrão é a
+  mesma que a construção correta instalaria, então nada degrada.
+- **O prefixo URN inválido continua devolvendo o sentinela puro.** A
+  assimetria com as chaves malformadas, que têm erro próprio, não tem
+  motivo técnico: veio com a primeira versão do analisador permissivo e
+  nunca foi registrada. Foi mantida por compatibilidade, e por a `v0.x`
+  não ganhar símbolo público para uma distinção que nenhum chamador
+  pediu; está documentada na seção 6.4 e travada por teste. Criar o erro
+  de prefixo fica para uma revisão da taxonomia inteira, em versão
+  maior. Registrado na seção 11.3.
+- **As travas de alocação são requisito da especificação**, não só desta
+  implementação. A alternativa, tratar desempenho como propriedade do
+  código e não do formato, deixaria uma reimplementação alocar em toda
+  geração e se dizer conforme. Registrado na seção 11.1.
+- **A conversão gregoriana inversa é euclidiana** e o par devolvido é
+  canônico. A alternativa de manter a divisão truncada e escrever a
+  normalização como requisito da linguagem-alvo foi recusada, porque
+  publicaria um par não canônico como contrato de um método público.
+  Registrado na seção 11.3.
+- **Os vetores das versões 1, 2 e 6 são de leitura e de reempacotamento
+  independente**, não de ida e volta por uma geração a partir de campos,
+  para não reabrir a decisão que restringe `GenerateAt` ao UUIDv7.
+  Registrado na seção 11.3.
+- **Rótulos de texto são apresentação e os atalhos da versão 2 são
+  opcionais**, para que uma reimplementação possa traduzir os primeiros e
+  omitir os segundos sem deixar de ser conforme. Registrado na seção
+  11.3.
 
 ---
 

@@ -12,7 +12,7 @@ import (
 // travando a leitura dos 48 bits de milissegundos, de rand_a e do topo
 // de rand_b.
 func TestImportKnownVector(t *testing.T) {
-	// unix_ts_ms = 0x0192f7c51a2b = 1728000000043
+	// unix_ts_ms = 0x0192f7c51a2b = 1730733742635 (2024-11-04T15:22:22.635Z)
 	// rand_a     = 0xc3d          = 3133
 	// rand_b topo 10 bits = (0x0e << 4) | (0x4f >> 4) = 0xE4 = 228
 	u := uuid.UUID{

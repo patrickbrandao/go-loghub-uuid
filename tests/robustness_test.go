@@ -55,6 +55,17 @@ func TestZeroGeneratorUsesDefaultEntropy(t *testing.T) {
 			t.Fatalf("ponteiro nulo: GenerateString devolveu %d caracteres: %q", len(s), s)
 		}
 	}
+
+	// A tolerância é regra do tipo inteiro (docs/SPEC.md seção 5.2, caso
+	// 3): vale também para as versões 4 e 8, que não passam por Generate.
+	for name, g := range map[string]*uuid.Generator{"Generator zerado": &byValue, "ponteiro nulo": byPointer} {
+		if u := g.GenerateV4(); u.Version() != 4 || u.Variant() != 0b10 || u.IsZero() {
+			t.Fatalf("%s: GenerateV4 devolveu %s", name, u)
+		}
+		if u := g.GenerateV8(); u.Version() != 8 || u.Variant() != 0b10 || u.IsZero() {
+			t.Fatalf("%s: GenerateV8 devolveu %s", name, u)
+		}
+	}
 }
 
 // countingSource devolve uma fonte de entropia determinística que conta

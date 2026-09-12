@@ -114,10 +114,11 @@ func TestTimeBasedZeroAllocations(t *testing.T) {
 func TestParseZeroAllocations(t *testing.T) {
 	raw := []byte(canonical)
 	cases := map[string]func(){
-		"Parse canônico":     func() { sinkU, _ = uuid.Parse(canonical) },
-		"Parse entre chaves": func() { sinkU, _ = uuid.Parse("{" + canonical + "}") },
-		"Parse URN":          func() { sinkU, _ = uuid.Parse("urn:uuid:" + canonical) },
-		"ParseBytes":         func() { sinkU, _ = uuid.ParseBytes(raw) },
+		"Parse canônico":        func() { sinkU, _ = uuid.Parse(canonical) },
+		"Parse entre chaves":    func() { sinkU, _ = uuid.Parse("{" + canonical + "}") },
+		"Parse URN":             func() { sinkU, _ = uuid.Parse("urn:uuid:" + canonical) },
+		"Parse hexadecimal cru": func() { sinkU, _ = uuid.Parse("0192f7c51a2b7c3d8e4faabbccddeeff") },
+		"ParseBytes":            func() { sinkU, _ = uuid.ParseBytes(raw) },
 	}
 	for name, call := range cases {
 		if allocs := testing.AllocsPerRun(1_000, call); allocs != 0 {
