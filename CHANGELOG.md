@@ -19,6 +19,12 @@ Convenções de cada seção:
 
 ## [Não publicado]
 
+Nada ainda.
+
+---
+
+## [v0.5.0] — 2026-09-12
+
 ### Adicionado
 
 - **`BinaryUUID` e `NullBinaryUUID` em `sql.go`: escrita em coluna
@@ -164,6 +170,62 @@ Convenções de cada seção:
   nenhum caminho anterior foi tocado: quem atualiza da `v0.4.0` não
   precisa mudar nada.
 
+- **`UUID.AppendBinary` em `encoding.go`: o par binário de
+  `AppendText`.** O tipo satisfazia a `encoding.TextAppender` do Go 1.24
+  e não a `encoding.BinaryAppender`, que a biblioteca padrão introduziu
+  junto. A assimetria não tinha justificativa registrada, e não se
+  sustenta: o motivo de existir o anexador de texto é serializar em
+  volume sem alocar, e quem grava em coluna binária de 16 bytes — o caso
+  que `BinaryUUID` passou a atender neste mesmo ciclo — é justamente
+  quem grava em volume. Sem o método, todo consumidor genérico que
+  prefira anexar a alocar caía no caminho que aloca.
+
+  O método escreve os 16 bytes em ordem de rede no fim do buffer do
+  chamador, não aloca quando há capacidade sobrando, e o erro devolvido
+  é sempre nulo. Há trava de alocação para ele, ao lado da de
+  `AppendTo`.
+
+  **Não muda formato de dados.** O conteúdo é idêntico ao de
+  `MarshalBinary`, ao contrário do que aconteceu quando `MarshalText`
+  passou a existir e a serialização JSON deixou de ser uma lista de
+  números. Quem não chama o método novo não vê diferença.
+
+  O lado binário ficou com uma única forma, a da interface, sem o
+  equivalente de `AppendTo`: `append(dst, u[:]...)` é literalmente o
+  corpo dela. O motivo está em "Decisões". (`encoding.go`,
+  `tests/api_test.go`, `tests/alloc_test.go`)
+
+- **Dois alvos de fuzzing para a aritmética temporal:
+  `FuzzInstantArithmetic` e `FuzzGregorianUnixTime`.** Os três alvos
+  existentes recebem texto, onde o risco é leitura fora dos limites. A
+  aritmética de tempo — a que este ciclo e o anterior mais mexeram, com
+  saturação nas duas pontas, estouro da multiplicação por mil e a
+  divisão euclidiana nova — estava coberta só por tabela, com valores
+  escolhidos à mão, e tabela não varre faixa. É nas duas metades do
+  inteiro com sinal que o estouro troca o sinal e que o resto fica
+  negativo.
+
+  O primeiro recebe dois instantes e exige, nos três níveis mais um
+  nível desconhecido, versão 7 e variante RFC nas duas fronteiras,
+  fronteira inferior nunca acima da superior, o valor gerado sempre
+  dentro das fronteiras do próprio instante, e monotonicidade quando o
+  segundo instante não é anterior ao primeiro. O segundo recebe um
+  instante gregoriano em toda a faixa do inteiro com sinal e exige o par
+  canônico, com a fração entre zero e um segundo e múltipla de 100 ns.
+
+  As campanhas locais de 20 segundos somaram cerca de 7,2 milhões de
+  execuções sem achado. (`tests/fuzz_test.go`)
+
+- **Testes para os quatro ramos alcançáveis que faltavam na
+  cobertura.** A inicialização tardia da sequência de relógio, em
+  `clock_internal_test.go` porque o estado "não inicializada" é privado
+  e nenhuma entrada pública volta a ele; a leitura por nível sobre
+  versões que não carregam tempo Unix; o `Scan` de uma fatia de bytes
+  que não está vazia, não tem 16 bytes e não é texto válido; e o
+  auxiliar de ausência de valor diante de um tipo não suportado. O total
+  subiu de 99,0% para 99,6%. (`clock_internal_test.go`,
+  `tests/api_test.go`, `tests/versions_test.go`)
+
 ### Infraestrutura
 
 - **`.github/workflows/ci.yml`: ações atualizadas e aviso de cache
@@ -196,6 +258,13 @@ Convenções de cada seção:
   **Falta exercitar.** Os jobs `test-os` e `deep` não rodam em push para
   `main`, então precisam de `workflow_dispatch` para serem verificados
   com as versões novas.
+
+- **O job `deep` passou a rodar cinco campanhas de fuzzing, não três.**
+  Os dois alvos de aritmética temporal entraram com os mesmos 60
+  segundos e o mesmo `continue-on-error` dos de texto, e o passo que
+  consolida o resultado agora lista os cinco. O artefato `fuzz-corpus`
+  não mudou: ele já publica `tests/testdata/fuzz/` inteiro, qualquer que
+  seja o alvo que falhou. (`.github/workflows/ci.yml`)
 
 ### Alterado
 
@@ -501,6 +570,22 @@ Convenções de cada seção:
     `CLAUDE.md` aponta para os vetores das versões de tempo gregoriano e
     para a política de leitura em duas operações.
 
+- **A afirmação sobre cobertura foi corrigida em `CLAUDE.md` e em
+  `docs/TEST-AND-BENCHMARK.md`.** Os dois diziam que, fora as falhas de
+  `crypto/rand`, "o restante não coberto são ramos de erro secundários
+  dos analisadores, já exercitados pelo fuzzing". Isso deixou de ser
+  verdade em algum ponto: os quatro ramos descobertos não eram dos
+  analisadores, e o fuzzing não os alcançava. Agora que eles têm teste, a
+  lista de exceções é exatamente três blocos, e o texto diz isso e
+  acrescenta a consequência: um quarto bloco descoberto é lacuna de
+  teste, não exceção documentada.
+
+- **O cabeçalho de `clock_internal_test.go` descrevia menos do que o
+  arquivo contém.** Ele falava só das funções puras de decomposição,
+  enquanto o arquivo já guardava a máquina de estados do piso por
+  sequência, e agora guarda também a inicialização tardia. O texto passa
+  a listar os três motivos de o arquivo viver na raiz.
+
 ### Decisões
 
 - **As fronteiras de tempo não reabrem a decisão do relógio não
@@ -615,6 +700,17 @@ Convenções de cada seção:
   opcionais**, para que uma reimplementação possa traduzir os primeiros e
   omitir os segundos sem deixar de ser conforme. Registrado na seção
   11.3.
+- **Os dois anexadores em buffer do chamador andam juntos, e o binário
+  não ganha uma segunda forma sem erro.** Oferecer um sem o outro deixa o
+  tipo pela metade em consumidor genérico; e `AppendTo` só existe no lado
+  do texto porque a formatação canônica é um cálculo, enquanto os bytes
+  não são. Registrado na seção 11.3.
+- **A revisão da superfície pública inteira e a política de
+  compatibilidade continuam pendentes**, e por isso o versionamento
+  segue em `v0.x`. São duas das três condições que a seção 11.3 exige
+  para a `v1.0.0`; a terceira é uso em produção estabilizado. Nada
+  mudou na decisão, o registro é só para deixar claro que o ciclo foi
+  fechado com ela em aberto, de propósito.
 
 ---
 
@@ -1144,7 +1240,8 @@ justificaria revê-la. Este arquivo guarda o histórico — quando cada
 decisão foi tomada e o que mudou junto —, mas quem for propor ou auditar
 deve ler a especificação primeiro. Decisão nova entra nos dois lugares.
 
-[Não publicado]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.4.0...HEAD
+[Não publicado]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.1.0...v0.2.0
