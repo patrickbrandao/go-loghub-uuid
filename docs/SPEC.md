@@ -783,7 +783,19 @@ justificaria revê-la estão na seção 11.3.
 
 Em todos os casos de recusa o valor devolvido **DEVE** ser o UUID zerado,
 e nenhum byte parcialmente decodificado pode vazar; nas desserializações
-com receptor, o receptor **NÃO DEVE** ser alterado.
+com receptor, o receptor **NÃO DEVE** ser alterado. A regra vale para os
+dois tipos: no anulável ela alcança **as duas** componentes, o
+identificador e o booleano de presença, que **NÃO DEVEM** mudar quando a
+entrada é recusada.
+
+**Exceção única — a leitura de valor de banco do tipo anulável.** Ali o
+identificador continua intacto, mas o booleano **DEVE** cair para falso.
+Não é inconsistência: a interface de leitura de banco recebe um destino
+**reaproveitado a cada linha**, e um chamador que ignore o erro leria o
+valor da linha anterior como se fosse o da linha que falhou. Derrubar o
+booleano transforma esse descuido em ausência de valor, e não em dado
+errado. As desserializações não têm destino reaproveitado, e por isso não
+têm a exceção. A decisão está na seção 11.3.
 
 Os dois auxiliares que entram em pânico em vez de devolver erro, um para
 constantes do próprio código (`MustParse`) e um para encadear com
@@ -1002,7 +1014,10 @@ nas seções 3.5 e 3.6.
      de valor, sem erro, coerente com a regra de texto vazio acima. Um
      destino que espere a sequência vazia e receba o literal `null`, ou
      o contrário, falha na desserialização, e é por isso que a tabela é
-     normativa. Entrada inválida devolve erro e deixa o booleano falso.
+     normativa. Entrada inválida devolve erro e, nas desserializações,
+     **preserva o receptor inteiro**, identificador e booleano, conforme
+     a seção 6.4; só a leitura de valor de banco derruba o booleano, pela
+     exceção registrada ali.
 3. **Valores Especiais**:
    - `Nil`: todos os 16 bytes em zero (`00000000-0000-0000-0000-000000000000`).
    - `Max`: todos os 16 bytes em `0xFF` (`ffffffff-ffff-ffff-ffff-ffffffffffff`).
@@ -1429,7 +1444,11 @@ reais:
       binário e exigir, respectivamente, `NULL`, o literal `null`, a
       sequência vazia e a sequência vazia; desserializar a entrada vazia
       nos quatro e exigir ausência sem erro. Desserializar entrada
-      inválida e exigir erro com o booleano falso.
+      inválida em JSON, texto e binário, a partir de um receptor que
+      **já continha valor presente**, e exigir erro com o receptor
+      inteiro intacto; fazer a mesma leitura recusada pela via de banco e
+      exigir erro com o identificador intacto e o booleano falso, que é a
+      exceção da seção 6.4.
     - Configurar o nó com menos de seis bytes e exigir a recusa
       observável e o estado inalterado; com seis bytes, exigir que os
       identificadores seguintes o carreguem e que a consulta devolva uma
@@ -1509,9 +1528,9 @@ pacote faz diferente" não são argumento novo.
 | **A conversão gregoriana inversa satura entradas abaixo do limiar de estouro**, em vez de deixar a subtração do deslocamento gregoriano girar o inteiro com sinal para o futuro. | 2026-09-12 | O tipo `GregorianTime` é público e aceita qualquer `int64`. Valores abaixo de `MinInt64 + gregorianOffset` fazem a subtração estourar e produzem silenciosamente um instante no futuro distante (~ano 30.800). O campo de 60 bits dos UUIDs v1/v6 nunca produz tais valores, mas um chamador que construa `GregorianTime` a partir de dados externos pode atingir a condição. A saturação segue o padrão de `saturatedInstant` (seção 3.5) e custa uma comparação num caminho que não é quente. | Nada previsto: a alternativa é aceitar resultado absurdo em silêncio. |
 | **Os vetores dourados das versões 1, 2 e 6 são de leitura e de reempacotamento independente, não de ida e volta por uma geração a partir de campos.** | 2026-09-12 | Uma geração de v1/v6 que aceitasse instante, sequência e nó por parâmetro seria o caminho mais direto para vetores de ida e volta, mas é exatamente o que a decisão sobre `GenerateAt` acima recusou, pelo piso de relógio por sequência. A tabela do caso 18 fixa o leitor; o reempacotamento por uma função escrita no teste, a partir das fórmulas da seção 4.1, fixa o escritor. Juntos fecham a classe de defeito do deslocamento errado aplicado simetricamente nos dois lados, que nenhum teste anterior detectava. | O mesmo que justificaria rever a decisão sobre `GenerateAt` para as versões 1, 2 e 6. |
 | **Os rótulos de texto de versão, variante e domínio são apresentação, não contrato; os atalhos de UUIDv2 pelo usuário e grupo do processo são conveniências não normativas.** | 2026-09-12 | Nenhum dos dois entra nos bytes do identificador. Os rótulos podem ser traduzidos; o que é técnico neles (fusão dos códigos de variante 0 e 1, ambiguidade do código 3) está na seção 7. Os atalhos dependem de o sistema ter identificador numérico de usuário, e em Windows gravam `0xFFFFFFFF` para todo processo: por isso são opcionais e carregam a advertência da seção 4.3, em vez de serem exigidos de uma reimplementação. | Nada previsto. |
-
 | **Os dois anexadores em buffer do chamador, o de texto e o de binário, andam juntos; o binário não ganha uma segunda forma sem erro.** | 2026-09-12 | O anexador de texto existia desde a `v0.4.0` e o binário não, sem justificativa registrada. A assimetria não se sustenta: o motivo de existir o de texto é serializar em volume sem alocar, e quem grava em coluna binária é justamente quem grava em volume. Em linguagens com as duas interfaces de anexação, satisfazer só a de texto deixa o tipo pela metade em consumidor genérico. O lado binário fica com uma única forma, a da interface, porque `append(dst, u[:]...)` é literalmente o corpo dela: `AppendTo` existe no texto porque a formatação canônica é um cálculo, e os bytes não são. O conteúdo coincide com a serialização binária, então nada de gravado muda. | Uma terceira interface de anexação na biblioteca padrão da linguagem. |
 | **O UUIDv7 existe também pelo nome: por versão, `GenerateV7`, e por nível, `GenerateV7Level1`, `GenerateV7Level2` e `GenerateV7Level3`, como métodos do gerador e funções de pacote, sem parâmetro de nível e sem forma em texto.** | 2026-09-12 | Todas as outras versões têm função própria, de `GenerateV1` a `GenerateV8`, e o UUIDv7 padrão da RFC só era pedido por `Generate(Level1)`: quem procurava a função por versão concluía que ela não existia, e a biblioteca quebrava o padrão de nomes que ela mesma estabeleceu. O nome por versão sozinho, porém, privilegiava o Nível 1 e deixava os níveis 2 e 3 por constante, e o nível é contrato de toda a coluna (seção 3.5): vale que ele fique legível no ponto da chamada. Os nomes por nível dão isso sem parâmetro, e `GenerateV7Level1` repete `GenerateV7` de propósito, para a família ser completa e a busca por qualquer dos dois nomes encontrar a função. Os apelidos custam oito símbolos, são embutidos pelo compilador e não tocam o caminho quente, porque `Generate` continua sendo a única implementação; o benchmark de cada nome iguala o do nível. Sem parâmetro de nível, porque o nome por versão designa o UUIDv7 da RFC e, nos demais, o nível já está no nome. Sem forma em texto, porque nenhuma função por versão a tem, e `GenerateString(nível)` ou `String()` já cobrem. Isto não reabre a decisão contra a família de aridades de `GenerateAt` (acima): lá o nível ia na contagem de argumentos e a proposta somava dezesseis símbolos com variantes em texto; aqui o nível está escrito no nome, não há forma em texto nem variante por instante, e a constante continua sendo a única forma de dizer o nível **como valor**. | Uma forma em texto, só se todas as funções por versão a ganharem de uma vez; um parâmetro de nível em `GenerateV7`, nunca, porque aí o nome deixaria de designar o UUIDv7 da RFC; um quarto nome por nível, só com um quarto nível. |
+| **A recusa de uma desserialização não altera o receptor; a leitura de valor de banco do tipo anulável é a única exceção, e derruba o booleano de presença.** | 2026-09-12 | A seção 6.4 exigia o receptor inalterado e as seções 8 e 10 exigiam o booleano falso, e a implementação obedecia às duas: o JSON preservava, texto e binário derrubavam, e havia caso de teste para os dois comportamentos opostos. A regra que sobrevive é a de 6.4, que é a convenção da linguagem e a única defensável nos desserializadores: uma entrada recusada não é informação sobre o valor que o receptor já tinha. A exceção do banco tem motivo próprio e não é uniformizável: `database/sql` reaproveita o mesmo destino a cada linha, então quem ignore o erro leria o valor da linha anterior como se fosse o da que falhou; derrubar o booleano transforma o descuido em ausência de valor, e não em dado errado. Os desserializadores não têm destino reaproveitado, e por isso não têm a exceção. | Uma linguagem cuja interface de leitura de banco não reaproveite o destino entre linhas retiraria o motivo da exceção. |
 
 ### 11.4 Como registrar uma decisão nova
 

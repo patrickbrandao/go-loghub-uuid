@@ -98,6 +98,14 @@ type NullUUID struct {
 
 // Scan implementa sql.Scanner. NULL, string vazia e fatia de bytes vazia
 // produzem valor ausente (Valid falso), sem erro.
+//
+// Em caso de erro o identificador não é alterado, mas o booleano cai para
+// falso. É a única exceção à regra de receptor inalterado que vale para
+// os desserializadores (docs/SPEC.md seção 6.4), e tem motivo próprio:
+// database/sql reaproveita o mesmo destino a cada linha, então um
+// chamador que ignore o erro leria o valor da linha anterior como se
+// fosse o da linha que falhou. Zerar o booleano transforma esse descuido
+// em ausência de valor, e não em dado errado.
 func (n *NullUUID) Scan(src any) error {
 	if isAbsentScanValue(src) {
 		n.UUID, n.Valid = Nil, false
@@ -179,13 +187,17 @@ func (n NullUUID) MarshalText() ([]byte, error) {
 }
 
 // UnmarshalText lê a string canônica; entrada vazia produz valor ausente.
+//
+// Em caso de erro o receptor não é alterado, como em UnmarshalJSON e no
+// tipo simples: o booleano de um valor que já estava presente continua
+// verdadeiro. Ao contrário de Scan, aqui não há destino reaproveitado
+// entre linhas que justifique a exceção.
 func (n *NullUUID) UnmarshalText(data []byte) error {
 	if len(data) == 0 {
 		n.UUID, n.Valid = Nil, false
 		return nil
 	}
 	if err := n.UUID.UnmarshalText(data); err != nil {
-		n.Valid = false
 		return err
 	}
 	n.Valid = true
@@ -201,13 +213,15 @@ func (n NullUUID) MarshalBinary() ([]byte, error) {
 }
 
 // UnmarshalBinary lê 16 bytes; entrada vazia produz valor ausente.
+//
+// Em caso de erro o receptor não é alterado, pelo mesmo motivo de
+// UnmarshalText.
 func (n *NullUUID) UnmarshalBinary(data []byte) error {
 	if len(data) == 0 {
 		n.UUID, n.Valid = Nil, false
 		return nil
 	}
 	if err := n.UUID.UnmarshalBinary(data); err != nil {
-		n.Valid = false
 		return err
 	}
 	n.Valid = true

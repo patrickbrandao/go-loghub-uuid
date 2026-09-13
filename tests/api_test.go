@@ -770,9 +770,11 @@ func TestNullUUIDTextAndBinary(t *testing.T) {
 	if err := fromText.UnmarshalText(nil); err != nil || fromText.Valid || !fromText.UUID.IsZero() {
 		t.Errorf("UnmarshalText vazio: %+v, erro %v, esperado valor ausente", fromText, err)
 	}
+	// Entrada inválida não toca o receptor, como em UnmarshalJSON: o valor
+	// que já estava presente continua presente e intacto.
 	fromText = present
-	if err := fromText.UnmarshalText([]byte("nao-e-um-uuid")); !errors.Is(err, uuid.ErrInvalidFormat) || fromText.Valid {
-		t.Errorf("UnmarshalText inválido: %+v, erro %v, esperado ErrInvalidFormat com Valid falso", fromText, err)
+	if err := fromText.UnmarshalText([]byte("nao-e-um-uuid")); !errors.Is(err, uuid.ErrInvalidFormat) || fromText != present {
+		t.Errorf("UnmarshalText inválido: %+v, erro %v, esperado ErrInvalidFormat sem alterar o receptor", fromText, err)
 	}
 
 	// Binário.
@@ -790,13 +792,72 @@ func TestNullUUIDTextAndBinary(t *testing.T) {
 		t.Errorf("UnmarshalBinary vazio: %+v, erro %v, esperado valor ausente", fromBinary, err)
 	}
 	fromBinary = present
-	if err := fromBinary.UnmarshalBinary(reference[:15]); !uuid.IsInvalidLengthError(err) || fromBinary.Valid {
-		t.Errorf("UnmarshalBinary com 15 bytes: %+v, erro %v, esperado ErrInvalidLength com Valid falso", fromBinary, err)
+	if err := fromBinary.UnmarshalBinary(reference[:15]); !uuid.IsInvalidLengthError(err) || fromBinary != present {
+		t.Errorf("UnmarshalBinary com 15 bytes: %+v, erro %v, esperado ErrInvalidLength sem alterar o receptor", fromBinary, err)
 	}
 
 	// Value com valor presente grava a string canônica.
 	if value, err := present.Value(); err != nil || value != canonical {
 		t.Errorf("Value com valor: %v, erro %v", value, err)
+	}
+}
+
+// TestNullUUIDReceiverPolicyOnError trava a regra de receptor do tipo
+// anulável em erro, incluindo a única exceção, para que uma "uniformização"
+// futura tenha de passar por aqui.
+//
+// Os três desserializadores (JSON, texto e binário) preservam o receptor
+// inteiro, seguindo a regra mestra de docs/SPEC.md seção 6.4. Scan é a
+// exceção registrada: preserva o identificador e derruba o booleano,
+// porque database/sql reaproveita o mesmo destino a cada linha e um
+// chamador que ignore o erro leria o valor da linha anterior.
+//
+// REGRESSÃO: até a correção deste ciclo, texto e binário derrubavam o
+// booleano como Scan, enquanto o JSON o preservava, e a especificação
+// afirmava as duas coisas em seções diferentes.
+func TestNullUUIDReceiverPolicyOnError(t *testing.T) {
+	reference := uuid.MustParse(canonical)
+	present := uuid.NullUUID{UUID: reference, Valid: true}
+
+	// Desserializadores: o receptor sai intacto.
+	preservam := []struct {
+		nome string
+		call func(*uuid.NullUUID) error
+	}{
+		{"UnmarshalJSON", func(n *uuid.NullUUID) error { return n.UnmarshalJSON([]byte(`"nao-e-um-uuid"`)) }},
+		{"UnmarshalJSON com 42", func(n *uuid.NullUUID) error { return n.UnmarshalJSON([]byte(`42`)) }},
+		{"UnmarshalText", func(n *uuid.NullUUID) error { return n.UnmarshalText([]byte("nao-e-um-uuid")) }},
+		{"UnmarshalText curto", func(n *uuid.NullUUID) error { return n.UnmarshalText([]byte("abc")) }},
+		{"UnmarshalBinary", func(n *uuid.NullUUID) error { return n.UnmarshalBinary(reference[:15]) }},
+	}
+	for _, c := range preservam {
+		n := present
+		if err := c.call(&n); err == nil {
+			t.Errorf("%s: esperado erro", c.nome)
+		} else if n != present {
+			t.Errorf("%s: deixou %+v, esperado o receptor intacto %+v", c.nome, n, present)
+		}
+	}
+
+	// Scan: identificador intacto, booleano falso. É a exceção.
+	for _, src := range []any{"nao-e-um-uuid", []byte("abc"), 42} {
+		n := present
+		if err := n.Scan(src); err == nil {
+			t.Errorf("Scan(%#v): esperado erro", src)
+		} else if n.Valid || n.UUID != reference {
+			t.Errorf("Scan(%#v): deixou %+v, esperado Valid falso com o identificador intacto", src, n)
+		}
+	}
+
+	// O anulável binário delega, portanto herda as duas regras.
+	presenteBin := uuid.NullBinaryUUID{UUID: reference, Valid: true}
+	nb := presenteBin
+	if err := nb.UnmarshalText([]byte("nao-e-um-uuid")); err == nil || nb != presenteBin {
+		t.Errorf("NullBinaryUUID.UnmarshalText inválido: %+v, erro %v, esperado o receptor intacto", nb, err)
+	}
+	nb = presenteBin
+	if err := nb.Scan(42); err == nil || nb.Valid || nb.UUID != reference {
+		t.Errorf("NullBinaryUUID.Scan(42): %+v, erro %v, esperado Valid falso com o identificador intacto", nb, err)
 	}
 }
 
