@@ -1370,14 +1370,21 @@ reais:
       de fonte de entropia **não** sejam reconhecidos como erro de
       formato.
 18. **Vetores Dourados das Versões de Tempo Gregoriano (seção 4.1)**:
-    - A RFC 9562 não publica vetores para as versões 1, 2 e 6, e a
-      propriedade de ordenação **não** substitui um vetor: um
-      deslocamento errado por uma casa, aplicado igualmente na geração e
-      na leitura, satisfaz a ordenação, satisfaz a ida e volta e produz
-      um identificador ilegível para qualquer outra implementação. Essa
-      classe de defeito só é detectável por tabela externa, e o
-      cancelamento simétrico é exatamente o que uma refatoração cuidadosa
-      dos dois lados produz.
+    - A RFC 9562 publica vetor de versão 1 (Apêndice A.1) e de versão 6
+      (Apêndice A.5), com o mesmo tempo, a mesma sequência de relógio e
+      o mesmo nó — travados em `tests/rfc_appendix_test.go`. Ela **não**
+      publica vetor de versão 2, fora do escopo da RFC (seção 5.2), e é
+      só para essa versão que a tabela abaixo é a única fonte externa.
+      Em qualquer caso a propriedade de ordenação **não** substitui um
+      vetor: um deslocamento errado por uma casa, aplicado igualmente na
+      geração e na leitura, satisfaz a ordenação, satisfaz a ida e volta
+      e produz um identificador ilegível para qualquer outra
+      implementação. Essa classe de defeito só é detectável por tabela
+      externa, e o cancelamento simétrico é exatamente o que uma
+      refatoração cuidadosa dos dois lados produz. A tabela abaixo cobre
+      também a sequência e o nó do vetor da RFC, mas com valores
+      diferentes dos publicados nela — o vetor 18 é independente, não uma
+      cópia do Apêndice A.
     - Os vetores abaixo **são contrato**, como os do caso 12. Para uma
       sequência de relógio fixa `0x33c8`, um nó fixo
       `02:11:22:33:44:55` (bit multicast ligado) e, na versão 2, domínio
@@ -1439,13 +1446,17 @@ reais:
       Python (que constrói UUIDv1 a partir dos campos e lê o tempo, a
       sequência e o nó de volta) e, na leitura das versões 1 e 2, contra
       o pacote `github.com/google/uuid`, em `tests/compare`. A versão 6
-      **não** tem verificação externa: o pacote do Google, na versão
-      1.6.0, escreve o UUIDv6 com o carimbo de 64 bits gravado inteiro
-      nos bytes 0 a 7 e a versão sobreposta por cima, que não é a ordem
-      de campos da RFC 9562 §5.6, e por isso não serve de referência
-      para esta linha; `tests/compare` mede essa diferença. A linha da
-      versão 6 vale pela fórmula e pela relação com a linha da versão 1,
-      que carrega os mesmos 60 bits.
+      **não** tem verificação contra esse pacote: o pacote do Google, na
+      versão 1.6.0, escreve o UUIDv6 com o carimbo de 64 bits gravado
+      inteiro nos bytes 0 a 7 e a versão sobreposta por cima, que não é a
+      ordem de campos da RFC 9562 §5.6, e por isso não serve de referência
+      para esta linha; `tests/compare` mede essa diferença. Ainda assim a
+      versão 6 tem verificação externa independente do pacote do Google:
+      o vetor do Apêndice A.5 da própria RFC 9562, travado em
+      `tests/rfc_appendix_test.go` (o vetor deste caso 18 é distinto,
+      com sequência e nó próprios deste projeto, não uma cópia do
+      Apêndice A). A linha da versão 6 também vale pela fórmula e pela
+      relação com a linha da versão 1, que carrega os mesmos 60 bits.
 19. **Conversão Gregoriana Inversa Antes de 1970 (seção 4.1)**:
     - Montar UUIDs de versão 1 e 6 com carimbos anteriores à época Unix e
       exigir da conversão inversa o par **canônico**: um tique antes da
