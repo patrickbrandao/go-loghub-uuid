@@ -48,7 +48,7 @@ go-loghub-uuid/
 ├── parse.go                # Parse permissivo, Validate, FromBytes, MustParse
 ├── values.go               # Nil, Max, Compare, URN, Bytes, IsValid, UUIDs
 ├── encoding.go             # AppendTo/AppendBinary, MarshalText/Binary e as leituras
-├── sql.go                  # Scan, Value e NullUUID
+├── sql.go                  # Scan, Value, NullUUID, BinaryUUID e NullBinaryUUID
 ├── inspect.go              # Timestamp, GregorianTime, ClockSequence, NodeID
 ├── entropy.go              # NewGeneratorWithReader e NewCryptoGenerator
 ├── compat.go               # apelidos com os nomes do pacote google/uuid
