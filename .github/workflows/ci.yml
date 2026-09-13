@@ -208,6 +208,24 @@ jobs:
       - name: Suíte completa (inclui massa de 1.000.000) com detector de corrida
         run: go test ./... -race -v -timeout 20m
 
+      # tests/compare é módulo aninhado: go test ./... na raiz não desce
+      # nele, então sem este passo a suíte comparativa nunca roda no CI.
+      # Vive aqui, e não no job rápido, porque precisa de rede e depende do
+      # pacote github.com/google/uuid. A falha é tolerada de propósito: o
+      # que ela mede é o comportamento de software que não controlamos, e
+      # uma versão nova do outro pacote deve mudar o resultado do passo sem
+      # derrubar o trabalho. Ver docs/SPEC.md seção 11.3.
+      - name: Comparação com github.com/google/uuid (módulo aninhado)
+        id: compare
+        continue-on-error: true
+        working-directory: tests/compare
+        run: go test -v ./...
+
+      - name: Resultado da comparação
+        if: steps.compare.outcome == 'failure'
+        run: |
+          echo "::warning::A suíte comparativa falhou. Confira se o comportamento medido em github.com/google/uuid mudou e atualize docs/MIGRATION.md e docs/SPEC.md secao 4.2."
+
       # Os cinco alvos rodam sempre, mesmo que um falhe (continue-on-error),
       # para que uma campanha não esconda a falha da seguinte; o passo
       # final consolida o resultado e falha o job se algum deles falhou.
