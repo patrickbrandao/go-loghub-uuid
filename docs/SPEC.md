@@ -1314,7 +1314,8 @@ reais:
       formatos, em texto e em bytes (seção 6.3); extração completa dos
       campos de tempo (seção 7); escrita da forma canônica em buffer do
       chamador com capacidade sobrando; **escrita dos 16 bytes em buffer
-      do chamador com capacidade sobrando**; geração de versão 4; e as
+      do chamador com capacidade sobrando**; geração de versão 4; geração
+      de versão 8, com os bits do chamador e com os bits sorteados; e as
       geradoras de tempo gregoriano (versões 1, 2 e 6).
     - **Exceção única.** A conversão que devolve uma string, pelo relógio
       ou por instante, pode alocar **exatamente uma vez**, porque o

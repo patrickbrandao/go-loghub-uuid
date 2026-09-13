@@ -19,7 +19,19 @@ Convenções de cada seção:
 
 ## [Não publicado]
 
-Nada ainda.
+### Documentação
+
+- **A versão 8 entrou na lista de travas de alocação da especificação**
+  (`docs/SPEC.md` seção 10 caso 16, `tests/alloc_test.go`). O caso 16
+  enumera as operações que não podem alocar, e a lista tinha a versão 4
+  sem a 8, que o caso 15 já cita entre as gerações do tipo; nenhum teste
+  a cobria. `TestGenerateV8ZeroAllocations` trava as três formas:
+  `GenerateV8` com os bits do chamador, o método `GenerateV8` do
+  `Generator` e `GenerateV8Random`. Nenhum código mudou, e nenhuma das
+  três alocava: o método é `GenerateV8(g.GenerateV4())`, e a versão 4 já
+  tinha trava. A nova pega a refatoração que faça a versão 8 deixar de
+  ser só isso: forçada uma alocação no método antes do commit, ela
+  acusou o método e `GenerateV8Random`, que passa por ele.
 
 ---
 

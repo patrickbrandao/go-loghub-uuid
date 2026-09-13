@@ -210,3 +210,25 @@ func TestGenerateAtZeroAllocations(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerateV8ZeroAllocations estende a trava às três formas da versão
+// 8: com os bits do chamador, pelo gerador e pelo gerador padrão. Hoje a
+// forma sorteada é a versão 4 com seis bits regravados, e a trava existe
+// para que ela continue custando só isso.
+func TestGenerateV8ZeroAllocations(t *testing.T) {
+	g := uuid.NewGenerator()
+	var data [16]byte
+	cases := map[string]func() uuid.UUID{
+		"GenerateV8":           func() uuid.UUID { return uuid.GenerateV8(data) },
+		"Generator.GenerateV8": g.GenerateV8,
+		"GenerateV8Random":     uuid.GenerateV8Random,
+	}
+	for name, generate := range cases {
+		allocs := testing.AllocsPerRun(1_000, func() {
+			sinkU = generate()
+		})
+		if allocs != 0 {
+			t.Errorf("%s: %.0f alocações por chamada, esperado 0", name, allocs)
+		}
+	}
+}
