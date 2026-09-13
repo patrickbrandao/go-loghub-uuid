@@ -174,3 +174,47 @@ func TestStringKnownVector(t *testing.T) {
 		t.Fatalf("BinaryToString() = %q, esperado %q", got, canonical)
 	}
 }
+
+// TestParseHyphenPositions confere que o analisador permissivo, como o
+// estrito (TestFromStringHyphenPositions), exige os quatro hífens
+// canônicos exatamente nas posições 8, 13, 18 e 23 do miolo de 36
+// caracteres — nas três formas que carregam esse miolo: canônica, entre
+// chaves e URN.
+//
+// REGRESSÃO: fromCanonical (usado por Parse, ParseBytes e Validate) e
+// FromString compartilham a mesma lógica de checagem de hífen, mas em
+// cópias de código separadas (parse.go documenta o motivo). Um teste de
+// mutação que removeu a checagem de fromCanonical passou pela suíte
+// inteira sem esta trava: qualquer separador — "x", "+", espaço — no
+// lugar de um hífen passava a ser aceito, e Parse devolvia um UUID cujos
+// 16 bytes vinham só dos 32 dígitos hexadecimais restantes.
+func TestParseHyphenPositions(t *testing.T) {
+	for _, pos := range []int{8, 13, 18, 23} {
+		mutated := []byte(canonical)
+		mutated[pos] = 'x'
+		miolo := string(mutated)
+
+		for nome, entrada := range map[string]string{
+			"canônico":     miolo,
+			"entre chaves": "{" + miolo + "}",
+			"URN":          "urn:uuid:" + miolo,
+		} {
+			if _, err := uuid.Parse(entrada); !errors.Is(err, uuid.ErrInvalidFormat) {
+				t.Errorf("posição %d, %s: hífen substituído deveria ser rejeitado, obtido erro %v", pos, nome, err)
+			}
+			if _, err := uuid.ParseBytes([]byte(entrada)); !errors.Is(err, uuid.ErrInvalidFormat) {
+				t.Errorf("posição %d, %s (ParseBytes): hífen substituído deveria ser rejeitado", pos, nome)
+			}
+			if err := uuid.Validate(entrada); !errors.Is(err, uuid.ErrInvalidFormat) {
+				t.Errorf("posição %d, %s (Validate): hífen substituído deveria ser rejeitado", pos, nome)
+			}
+		}
+	}
+
+	// Controle: a forma compacta (32 dígitos, sem hífen algum) não tem
+	// posição de hífen para exigir, e continua aceita.
+	compact := strings.ReplaceAll(canonical, "-", "")
+	if _, err := uuid.Parse(compact); err != nil {
+		t.Errorf("forma compacta sem hífens deveria ser aceita, erro %v", err)
+	}
+}
