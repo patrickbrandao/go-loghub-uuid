@@ -609,6 +609,17 @@ A geração de UUIDs baseados em tempo requer sincronização segura:
 4. Gravar a versão no nibble alto do byte 6 (`0x3` ou `0x5`).
 5. Gravar a variante nos 2 bits superiores do byte 8 (`0b10`).
 
+Os quatro espaços de nomes predefinidos são os da tabela 3 da seção 6.6
+da RFC 9562. Os valores são contrato: um dígito errado muda todo
+identificador de versão 3 e 5 derivado do espaço, sem erro nenhum.
+
+| Espaço de nomes | Valor |
+|:---|:---|
+| `NameSpaceDNS` | `6ba7b810-9dad-11d1-80b4-00c04fd430c8` |
+| `NameSpaceURL` | `6ba7b811-9dad-11d1-80b4-00c04fd430c8` |
+| `NameSpaceOID` | `6ba7b812-9dad-11d1-80b4-00c04fd430c8` |
+| `NameSpaceX500` | `6ba7b814-9dad-11d1-80b4-00c04fd430c8` |
+
 ### 4.5 Versão 4 e Versão 8
 
 - **Versão 4**: 16 bytes preenchidos com aleatoriedade. Sobrescrever o
@@ -1119,9 +1130,13 @@ reais:
      `www.example.com`:
      - V3: `5df41881-3aed-3515-88a7-2f4a814cf09e`
      - V5: `2ed6657d-e927-568b-95e1-2665a8aea6a2`
-   - A RFC não publica vetores para os demais espaços de nomes; vetores
-     adicionais só devem entrar na suíte se forem calculados por uma
-     implementação independente.
+   - Validar os quatro espaços de nomes contra a tabela da seção 4.4,
+     pela forma canônica em texto. O vetor acima só alcança
+     `NameSpaceDNS`: um dígito errado em qualquer dos outros três
+     passaria por todos os demais casos desta seção.
+   - A RFC não publica vetores de geração para os demais espaços de
+     nomes; vetores adicionais só devem entrar na suíte se forem
+     calculados por uma implementação independente.
 6. **Ordenação Temporal Coerente**:
    - Testar que se o instante de B for estritamente superior ao instante de
      A, a comparação de strings e de bytes de B é estritamente maior que a

@@ -104,24 +104,25 @@ func TestNameBasedIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestNamespacesAreDistinct confere que os quatro espaços de nomes bem
-// conhecidos foram transcritos corretamente e não colidem.
-func TestNamespacesAreDistinct(t *testing.T) {
-	spaces := map[string]uuid.UUID{
-		"DNS":  uuid.NameSpaceDNS,
-		"URL":  uuid.NameSpaceURL,
-		"OID":  uuid.NameSpaceOID,
-		"X500": uuid.NameSpaceX500,
-	}
-	seen := make(map[uuid.UUID]string, len(spaces))
-	for name, u := range spaces {
-		if u.IsZero() {
-			t.Errorf("espaço de nomes %s ficou nulo", name)
+// TestNamespacesMatchRFC confere os quatro espaços de nomes contra a
+// tabela 3 da seção 6.6 da RFC 9562. Um dígito trocado na transcrição
+// muda em silêncio todo UUID de versão 3 e 5 derivado do espaço, e só o
+// espaço DNS tem vetor de geração publicado (TestNameBasedVectors).
+// Valores fixos implicam também que nenhum é nulo e que não colidem.
+func TestNamespacesMatchRFC(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		space uuid.UUID
+		want  string
+	}{
+		{"NameSpaceDNS", uuid.NameSpaceDNS, "6ba7b810-9dad-11d1-80b4-00c04fd430c8"},
+		{"NameSpaceURL", uuid.NameSpaceURL, "6ba7b811-9dad-11d1-80b4-00c04fd430c8"},
+		{"NameSpaceOID", uuid.NameSpaceOID, "6ba7b812-9dad-11d1-80b4-00c04fd430c8"},
+		{"NameSpaceX500", uuid.NameSpaceX500, "6ba7b814-9dad-11d1-80b4-00c04fd430c8"},
+	} {
+		if got := tc.space.String(); got != tc.want {
+			t.Errorf("%s: %s, divergente da RFC 9562 (esperado %s)", tc.name, got, tc.want)
 		}
-		if other, dup := seen[u]; dup {
-			t.Errorf("espaços de nomes %s e %s são iguais", name, other)
-		}
-		seen[u] = name
 	}
 }
 

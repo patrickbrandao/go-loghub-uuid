@@ -33,6 +33,23 @@ Convenções de cada seção:
   ser só isso: forçada uma alocação no método antes do commit, ela
   acusou o método e `GenerateV8Random`, que passa por ele.
 
+- **Os valores dos quatro espaços de nomes entraram na especificação e
+  ganharam trava** (`docs/SPEC.md` seções 4.4 e 10 caso 5,
+  `tests/versions_test.go`, `namebased.go`). A seção 4.4 citava os nomes
+  sem os valores, embora a especificação se diga suficiente para
+  reimplementar a biblioteca, e os valores são contrato: um dígito
+  trocado muda em silêncio todo UUID de versão 3 e 5 derivado do espaço.
+  Na suíte, só `NameSpaceDNS` estava travado, e de forma indireta, pelos
+  vetores da RFC. Trocado um dígito de `NameSpaceURL` numa cópia, a suíte
+  inteira passou, `tests/compare` incluído.
+
+  `TestNamespacesAreDistinct` virou `TestNamespacesMatchRFC`. O
+  comentário dizia conferir que os espaços "foram transcritos
+  corretamente", e o corpo só conferia que não eram nulos nem iguais
+  entre si; valores fixos implicam as duas coisas. O comentário de
+  `namebased.go` apontava "o apêndice da RFC 9562", mas nela a tabela
+  dos espaços de nomes está na seção 6.6.
+
 ---
 
 ## [v0.6.0] — 2026-09-12
