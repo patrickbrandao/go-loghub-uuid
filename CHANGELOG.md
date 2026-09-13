@@ -19,7 +19,146 @@ Convenções de cada seção:
 
 ## [Não publicado]
 
-Nada ainda.
+Ciclo de auditoria sobre a `v0.5.0`. Seis relatórios foram examinados:
+três apontavam defeito real e foram corrigidos, dois propunham ampliar a
+superfície pública e foram recusados com registro, e um era metade
+documentação desatualizada e metade lacuna de CI.
+
+### Corrigido
+
+- **O piso anterior a 1970 na geração de UUIDv1, v2 e v6 zerava só os
+  segundos, e não a fração do segundo** (`clock.go`). `gregorianFromUnix`
+  atribuía `sec = 0` e mantinha `nsec`, que o Go devolve **positivo**
+  para instantes anteriores à época: `1969-12-31T23:59:59,5Z` chega como
+  `sec = -1` com `nsec = 500.000.000`. O carimbo saía em até 0,9999999 s
+  **à frente** da época, em vez de exatamente nela, e ao cruzar a
+  fronteira o relógio **regredia** quase um segundo, do último instante
+  antes dela para o primeiro depois.
+
+  Nenhum identificador chegou a sair fora de ordem: o piso de
+  `clockNowLocked` (`now <= lastClockTime`) contém a regressão. O efeito
+  observável era outro — o relógio ficava adiantado em até um segundo, e
+  o piso por sequência tornava esse adiantamento permanente no processo,
+  exatamente o que a regra de piso existe para impedir. Atinge só quem
+  gera v1/v2/v6 com o relógio do sistema ajustado para antes de 1970,
+  tipicamente antes da primeira sincronização por NTP.
+
+  A função agora devolve `gregorian100ns` direto quando `sec < 0`,
+  zerando as duas componentes como `splitUnixInstant` já fazia no
+  UUIDv7. Fora do caminho quente; o UUIDv7 nunca foi afetado.
+
+  `TestGregorianFromUnixFloorsPreEpoch` só exercitava `(-1, 0)`, onde a
+  fração já era zero, e por isso passava. Passou a cobrir sete instantes
+  pré-época com fração positiva, a época, a época mais um tique e a
+  própria fronteira, que é a asserção que não pode regredir.
+
+### Alterado
+
+- **A recusa de uma desserialização deixou de alterar o receptor em
+  `NullUUID` e `NullBinaryUUID`** (`sql.go`). `UnmarshalText` e
+  `UnmarshalBinary` derrubavam `Valid` para falso antes de devolver o
+  erro; `UnmarshalJSON` não derrubava. Um `NullUUID` que já continha
+  valor presente perdia a presença ao receber texto inválido, mas a
+  mantinha ao receber JSON inválido.
+
+  A especificação afirmava as duas coisas: a seção 6.4 exigia o receptor
+  inalterado e as seções 8 e 10 exigiam o booleano falso. Havia caso de
+  teste para cada um dos dois comportamentos opostos, então nenhuma
+  suíte podia detectar a contradição. Prevaleceu a seção 6.4, que é a
+  convenção da linguagem: uma entrada recusada não é informação sobre o
+  valor que o receptor já tinha.
+
+  **Quem consome:** só muda o estado depois de um erro, que é caminho de
+  falha. Código que dependia de `Valid` cair para falso após um
+  `UnmarshalText` recusado precisa passar a olhar o erro — que já era o
+  jeito certo, e é o único que funcionava para o JSON.
+
+  `Scan` **não** mudou, e agora tem a exceção escrita: `database/sql`
+  reaproveita o mesmo destino a cada linha, então quem ignore o erro
+  leria o valor da linha anterior como se fosse o da linha que falhou.
+  Derrubar o booleano transforma o descuido em ausência de valor, e não
+  em dado errado. O identificador continua intacto também ali.
+
+  `TestNullUUIDReceiverPolicyOnError` trava a regra inteira num lugar só,
+  com a exceção do `Scan` ao lado dos três desserializadores, para que
+  uma "uniformização" futura tenha de passar por ele.
+
+- **A suíte comparativa `tests/compare` passou a rodar no CI**
+  (`.github/workflows/ci.yml`). Ela existia desde a `v0.5.0` e nenhum
+  trabalho a executava: `go test ./...` na raiz não desce em módulos
+  aninhados, e não havia passo dedicado. As afirmações comparativas do
+  projeto voltavam a depender de execução manual.
+
+  Entrou no trabalho semanal `deep`, com `continue-on-error` e um aviso
+  no resumo quando falha. Não entra no CI rápido, pelo motivo já
+  registrado: precisa de rede, e o lançamento de uma versão do pacote de
+  terceiros não pode quebrar o CI desta biblioteca. A falha tolerada é
+  deliberada — o que a suíte mede é o comportamento de software que não
+  controlamos.
+
+### Documentação
+
+- **`docs/SPEC.md` seção 4.1 ganhou a regra de piso anterior à época
+  Unix na geração gregoriana**, que faltava por completo. A seção
+  detalhava as armadilhas da conversão **inversa** (divisão truncada,
+  saturação em `MinInt64`) e dava a fórmula da ida sem nenhuma regra de
+  piso, embora a seção 3.2 a tornasse obrigatória para o UUIDv7. A regra
+  nova exige zerar **as duas** componentes, com o motivo — a fração
+  pré-época é positiva — e registra o segundo perigo para quem
+  reimplementa: `uint64(sec)` com `sec` negativo dá a volta, chega perto
+  de 1,8 × 10¹⁹ e extrapola o campo de 60 bits.
+
+- **`docs/SPEC.md` seções 6.4, 8 e 10 foram harmonizadas** quanto ao
+  receptor em erro, com a exceção da leitura de banco nomeada e
+  justificada em 6.4, e o caso 20 da seção 10 passou a exigir os dois
+  comportamentos a partir de um receptor que já continha valor.
+
+- **`docs/SPEC.md` seção 10 ganhou o caso 21, do piso gregoriano na
+  geração.** A regra nova da seção 4.1 não tinha caso obrigatório
+  correspondente, e nenhum dos casos existentes a cobria: o caso 3 é o
+  piso da época Unix no UUIDv7, onde duas formas de piso são aceitas, e
+  o caso 19 é a conversão **inversa**. Uma reimplementação podia passar
+  nos dois e repetir exatamente o defeito corrigido acima.
+
+  O caso exige fração **positiva** nos instantes pré-época e, separada,
+  a não regressão na fronteira. O motivo está escrito nele: o defeito
+  sobreviveu da primeira versão à `v0.5.0` justamente porque o único
+  instante exercitado era `(-1, 0)`, cuja fração já é zero.
+
+- **`docs/SPEC.md` seção 1 item 6 e `STARTHERE.md` passaram a citar
+  `BinaryUUID` e `NullBinaryUUID`.** Os dois tipos entraram na `v0.5.0` e
+  a seção 8 os especifica por extenso, mas o sumário da seção 1 e a
+  árvore de arquivos ainda falavam só de `NullUUID`.
+
+- **A tabela da seção 11.3 voltou a ser uma tabela só.** Uma linha em
+  branco no meio dela partia o registro em dois, e as decisões abaixo do
+  corte renderizavam sem cabeçalho.
+
+### Decisões
+
+- **O tipo de escrita binária continua sendo adaptador de gravação, e
+  não um segundo tipo de identificador.** Proposto acrescentar a
+  `BinaryUUID` os dois anexadores em buffer e oito utilitários
+  (`UUID()`, `IsZero`, `IsMax`, `IsValid`, `Bytes`, `Version`, `Variant`
+  e `Compare`), sob o argumento de simetria com o tipo simples e de
+  conformidade com as seções 7 e 8 da especificação.
+
+  As duas alegações de não conformidade não se sustentam. A regra dos
+  anexadores da seção 7 é de **par** — quem oferece um deve oferecer o
+  outro — e `BinaryUUID` não oferece nenhum dos dois, de modo que a
+  cumpre. A paridade da seção 8 enumera exatamente os quatro
+  serializadores, com motivo declarado, e `BinaryUUID` os tem todos.
+  Medido: `UUID` satisfaz `encoding.TextAppender` e
+  `encoding.BinaryAppender`; `BinaryUUID`, `NullUUID` e `NullBinaryUUID`
+  não satisfazem nenhum dos dois. O anulável simples está na mesma
+  posição e ninguém propôs ampliá-lo, o que mostra que a política real é
+  coerente: anexadores e inspeção vivem no tipo base.
+
+  O argumento de ergonomia parte de um uso que o próprio tipo
+  desaconselha — campo de modelo de domínio tipado como binário — quando
+  a forma prevista é a conversão no ponto da consulta, `BinaryUUID(u)`,
+  decidida em 2026-09-11. Registrado em `docs/SPEC.md` seção 11.3, com o
+  que justificaria rever.
 
 ---
 
