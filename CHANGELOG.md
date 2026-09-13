@@ -50,6 +50,28 @@ Convenções de cada seção:
   `namebased.go` apontava "o apêndice da RFC 9562", mas nela a tabela
   dos espaços de nomes está na seção 6.6.
 
+### Decisões
+
+- **`Nil`, `Max` e os quatro espaços de nomes continuam variáveis
+  exportadas, sem funções de acesso e sem defesa interna contra
+  alteração.** Proposto fazer `IsZero`, `IsMax` e `IsValid` compararem
+  contra cópias privadas, para que um `uuid.Nil[0] = 1` em outro pacote
+  não os afetasse, e criar `NamespaceDNS()` e afins como acessores.
+
+  A proteção pela metade foi medida e não protege. Com `Nil` corrompido,
+  `Parse` de entrada inválida e `Scan("")` continuam devolvendo o valor
+  corrompido, porque a biblioteca atribui `Nil` em dezoito pontos de
+  `parse.go`, `sql.go` e `compat.go`; com os predicados blindados,
+  `IsZero` passa a dizer falso justamente para esse valor. Blindar os
+  dezoito pontos ainda deixaria sem proteção o `id == uuid.Nil` escrito
+  pelo chamador. Acessores seriam um segundo nome para cada valor, sem
+  proteger quem usa o primeiro: as variáveis precisam continuar
+  existindo, porque em `github.com/google/uuid` as seis são variáveis e
+  `docs/MIGRATION.md` lista os mesmos nomes. O Go não tem constante de
+  vetor, e a convenção da linguagem é documentar que a variável não deve
+  mudar: `Nil` e `Max` já diziam isso, e o bloco dos espaços de nomes em
+  `namebased.go` passou a dizer. Registrado em `docs/SPEC.md` seção 11.3.
+
 ---
 
 ## [v0.6.0] — 2026-09-12
