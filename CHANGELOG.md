@@ -19,6 +19,103 @@ Convenções de cada seção:
 
 ## [Não publicado]
 
+## [v0.6.1] — 2026-09-13
+
+Ciclo de revisão completa com teste de mutação (1.809 mutantes sobre o
+código de produção): 76 lacunas reais de teste identificadas, cinco
+delas confirmadas como as mais sérias e corrigidas aqui — nenhuma tocou
+o comportamento público da biblioteca, só a suíte e a documentação. As
+demais lacunas de baixa e média gravidade ficam para um ciclo futuro.
+
+### Adicionado
+
+- **Vetores dos Apêndices A e B da RFC 9562, travados contra o texto
+  publicado da especificação** (`tests/rfc_appendix_test.go`). Antes
+  desta suíte, só as versões 3 e 5 estavam confirmadas contra a RFC (caso
+  obrigatório 5 da seção 10 de `docs/SPEC.md`); as versões 1, 4, 6, 7 e 8
+  não tinham vetor externo algum, apesar de `docs/SPEC.md` seção 10 caso
+  18 e o comentário de `tests/golden_test.go` afirmarem — errado — que a
+  RFC não publica vetor de versão 1 nem de 6. Ela publica: Apêndice A.1
+  (v1), A.3 (v4), A.5 (v6), A.6 (v7) e Apêndice B.1/B.2 (v8, incluindo um
+  exemplo com SHA-256 no lugar de SHA-1). O novo arquivo lê cada vetor
+  pelas funções públicas (`GregorianTime`, `ClockSequence`, `NodeID`,
+  `Timestamp`, `ImportBinary`), reproduz a escrita com a sequência e o
+  nó fixados (v1/v6) ou com a entropia fixada por `NewGeneratorWithReader`
+  (v4/v7), e cobre os dois exemplos de v8. `docs/SPEC.md` seção 10 caso
+  18 e `docs/STARTHERE.md` foram corrigidos para citar os vetores certos.
+
+- **Teste de concorrência para as versões 1, 2 e 6**
+  (`TestTimeBasedConcurrentUniqueness`, `tests/versions_test.go`). O
+  único teste concorrente da suíte (`TestConcurrentUniqueness`, em
+  `generation_test.go`) gera só UUIDv7, que não usa o relógio
+  compartilhado de `clock.go`. Removida a `clockMu` que protege esse
+  relógio e o nó em `GenerateV1`/`GenerateV6`, a suíte inteira — inclusive
+  sob `-race` — passava sem denunciar nada; o teste novo gera de 32
+  goroutines simultâneas e falha (com detecção de corrida e com
+  duplicação de UUID) sem a trava.
+
+- **`Parse` ganhou a mesma trava de posição de hífen que `FromString`
+  já tinha** (`TestParseHyphenPositions`, `tests/parsing_test.go`).
+  `TestFromStringHyphenPositions` só cobre o analisador estrito; a
+  checagem equivalente em `fromCanonical` (compartilhada por `Parse`,
+  `ParseBytes` e `Validate`, e usada nas formas canônica, entre chaves e
+  URN) não tinha teste próprio. Removida essa checagem, `Parse` passava a
+  aceitar qualquer caractere no lugar dos quatro hífens — e nem 20 s de
+  `FuzzParse` contra essa versão alterada encontraram o problema, porque
+  o oráculo do fuzzing não confere se a entrada aceita era válida.
+
+- **`GenerateV4` e `Generator.GenerateV8` ganharam teste que confere a
+  fonte de entropia, não só a forma do resultado**
+  (`TestGenerateV4UsesGeneratorSource`,
+  `TestGeneratorGenerateV8UsesGeneratorSource`, `tests/layout_test.go`).
+  Toda a suíte anterior confere só versão e variante; com entropia fixa
+  via `NewGeneratorWith`, os bits livres agora têm de bater byte a byte.
+  Sem o teste novo, fazer `Generator.GenerateV4` ignorar sua própria
+  fonte e delegar para `defaultGenerator.GenerateV4()` passava pela
+  suíte inteira.
+
+- **Testes internos travam que os apelidos de compatibilidade usam
+  `crypto/rand` de fato** (`TestNewCryptoGeneratorSourcesFromCryptoRand`,
+  `TestCompatAliasesUseCompatGenerator`, `compat_internal_test.go`, novo
+  terceiro arquivo de teste interno da raiz, pelo mesmo motivo de
+  `clock_internal_test.go`: precisa ler e trocar `compatGenerator`,
+  estado privado do pacote). O primeiro troca `crypto/rand.Reader` por
+  um leitor que conta chamadas e confere que `NewCryptoGenerator` de
+  fato o lê; o segundo troca `compatGenerator` por uma fonte
+  determinística e confere que `New`, `NewString`, `NewRandom` e `NewV7`
+  produzem exatamente os bytes que essa fonte determina. Sem eles, fazer
+  qualquer um dos quatro delegar a `defaultGenerator` — a fonte rápida do
+  runtime, sem garantia criptográfica — em vez de `compatGenerator`
+  passava pela suíte inteira, porque as duas fontes produzem UUIDs da
+  mesma forma.
+
+- **`tests/compare` ganhou dois testes que medem divergências já
+  descritas em `docs/MIGRATION.md`, mas nunca travadas em código**
+  (`TestGoogleScanAbsentDoesNotTouchDestination`,
+  `TestNewV7OrderingDiffersFromGoogle`, ambos em
+  `tests/compare/`). O primeiro mede que `Scan` de valor ausente (`nil`,
+  `""`, `[]byte{}`) não toca o destino no pacote do Google e zera o
+  desta biblioteca — o texto de `docs/MIGRATION.md` e de `CLAUDE.md`
+  dizia o contrário, que as duas seguiam "a mesma convenção", o que é
+  verdade para o erro devolvido (nenhum dos dois) e falso para o efeito
+  no destino (medido). O segundo mede que `google.uuid.NewV7` nunca
+  regride numa rajada de 200 mil chamadas (contador interno de 12 bits) e
+  que o `NewV7` desta biblioteca regride em cerca de metade dos pares,
+  consequência documentada, mas não travada, da decisão de não ter
+  contador monotônico (`docs/SPEC.md` seção 11.1).
+
+### Corrigido
+
+- **Um literal sem sinal num teste estourava `int` em plataformas de 32
+  bits** (`tests/versions_test.go`). `0xDEADBEEF`, passado direto a uma
+  função variádica de interface em três pontos de
+  `TestV2CarriesDomainAndID`, defasava para `int`, e `0xDEADBEEF`
+  (3.735.928.559) excede `math.MaxInt32`; `go vet` e `go test -c` para
+  `GOARCH=386` e `GOARCH=arm` falhavam ao compilar a suíte, embora o
+  pacote da raiz compilasse normalmente nessas plataformas (o
+  identificador local da versão 2 já é `uint32` em `version2.go`). Agora
+  é uma constante `uint32(0xDEADBEEF)` tipada explicitamente.
+
 ### Documentação
 
 - **A versão 8 entrou na lista de travas de alocação da especificação**
@@ -49,6 +146,22 @@ Convenções de cada seção:
   entre si; valores fixos implicam as duas coisas. O comentário de
   `namebased.go` apontava "o apêndice da RFC 9562", mas nela a tabela
   dos espaços de nomes está na seção 6.6.
+
+
+- **`docs/MIGRATION.md` e `CLAUDE.md` diziam que o `Scan` de valor
+  ausente segue "a mesma convenção" do pacote do Google.** É verdade só
+  para o erro (nenhum dos dois devolve); o pacote do Google não toca o
+  destino num valor ausente, e esta biblioteca sempre grava o UUID nulo.
+  Os dois textos agora descrevem a diferença, medida em
+  `tests/compare/scan_absent_test.go`.
+
+- **`docs/MIGRATION.md` não citava que `NewV7()` do pacote do Google é
+  estritamente ordenado sob rajada e o desta biblioteca não.** A
+  ausência de contador monotônico já estava registrada em
+  `docs/SPEC.md` seção 11.1, mas o guia de migração, que é onde quem já
+  depende da ordem estrita do `google/uuid` vai procurar, não mencionava
+  a consequência. Adicionado, com a medição de
+  `tests/compare/newv7_ordering_test.go`.
 
 ### Decisões
 
@@ -1585,7 +1698,8 @@ justificaria revê-la. Este arquivo guarda o histórico — quando cada
 decisão foi tomada e o que mudou junto —, mas quem for propor ou auditar
 deve ler a especificação primeiro. Decisão nova entra nos dois lugares.
 
-[Não publicado]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.6.0...HEAD
+[Não publicado]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.6.1...HEAD
+[v0.6.1]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.6.0...v0.6.1
 [v0.6.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.3.0...v0.4.0
