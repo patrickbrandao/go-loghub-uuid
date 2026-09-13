@@ -397,6 +397,24 @@ reforma do calendário gregoriano em **1582-10-15T00:00:00Z**.
 - **Cálculo do carimbo de 60 bits (`now`)**:
   `now = (uint64(sec) * 10_000_000) + (uint64(nsec) / 100) + gregorianOffset`
 
+  **Regra de piso anterior à época Unix.** Se o relógio do sistema
+  devolver um instante anterior a 1970 (`sec < 0`), a geração **DEVE**
+  aplicar piso na própria época e produzir exatamente
+  `now = gregorianOffset`. O piso **DEVE** zerar as **duas** componentes,
+  os segundos e a fração: a fração que um instante pré-época devolve é
+  positiva (em Go, `1969-12-31T23:59:59,5Z` é `sec = -1` com
+  `nsec = 500.000.000`), então zerar só os segundos projetaria o carimbo
+  em até 0,9999999 s **à frente** da época e faria o relógio **regredir**
+  ao cruzar a fronteira, do último instante antes dela para o primeiro
+  depois. É a mesma regra do item 2 da seção 3.2, aplicada à outra época;
+  zerar só os segundos é a armadilha simétrica à da divisão truncada na
+  conversão inversa, descrita adiante.
+
+  A conversão sem sinal é o segundo motivo de a regra ser obrigatória:
+  em linguagens onde `uint64(sec)` com `sec` negativo dá a volta, o
+  resultado fica perto de 1,8 × 10¹⁹, extrapola o campo de 60 bits e
+  corrompe a versão e a variante junto.
+
 #### Estrutura da Versão 1:
 - `time_low` (32 bits, bytes 0..3): 32 bits baixos de `now`.
 - `time_mid` (16 bits, bytes 4..5): bits 32..47 de `now`.
@@ -1416,6 +1434,28 @@ reais:
       observável e o estado inalterado; com seis bytes, exigir que os
       identificadores seguintes o carreguem e que a consulta devolva uma
       cópia, não o estado interno.
+
+21. **Piso Gregoriano Anterior a 1970 na Geração (seção 4.1)**:
+    - Alimentar a conversão direta de Unix para tique gregoriano com
+      segundos negativos e fração **positiva** — no mínimo
+      `(-1, 1)`, `(-1, 500.000.000)` e `(-1, 999.999.900)` — e exigir de
+      **todos** exatamente `gregorianOffset`, o deslocamento puro.
+    - Exigir separadamente a **não regressão na fronteira**: o resultado
+      do último instante antes da época **NÃO PODE** ser maior que o do
+      primeiro instante depois dela. É a asserção que distingue o piso
+      correto do piso que zera só os segundos, e a única que falha de
+      forma inequívoca — as demais podem ser lidas como imprecisão
+      tolerável, esta não.
+    - **Não é o caso 3, e não pode ser dobrado nele.** O caso 3 cobre o
+      piso da época Unix no UUIDv7, onde a seção 3.2 aceita **duas**
+      formas de piso; aqui só uma é aceitável, porque zerar apenas os
+      segundos projeta o carimbo em até 0,9999999 s à frente da época.
+      Também não é o caso 19, que cobre a conversão **inversa**: uma
+      implementação pode passar nos dois e ainda assim errar este.
+    - **Motivo de o caso existir.** Este defeito esteve presente da
+      primeira versão à `v0.5.0` com o caso de teste passando, porque o
+      único instante exercitado era `(-1, 0)`, cuja fração já é zero. Um
+      caso pré-época sem fração positiva **não** cobre a regra.
 
 ---
 

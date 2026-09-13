@@ -55,12 +55,41 @@ func TestSplitUnixInstantRollovers(t *testing.T) {
 	}
 }
 
+// TestGregorianFromUnixFloorsPreEpoch confere que o piso pré-1970 zera as
+// duas componentes do instante, e não apenas os segundos.
+//
+// REGRESSÃO: a versão anterior zerava só os segundos e mantinha a fração,
+// que o Go devolve positiva para instantes anteriores à época. O carimbo
+// saía em até 0,9999999 s à frente da época, e ao cruzar a fronteira o
+// relógio regredia quase um segundo — contido pelo piso de
+// clockNowLocked, mas ao preço de adiantamento permanente no processo.
+// O caso único de então, (-1, 0), passava porque a fração já era zero.
 func TestGregorianFromUnixFloorsPreEpoch(t *testing.T) {
-	if got := gregorianFromUnix(-1, 0); got != gregorian100ns {
-		t.Fatalf("pré-época: %d, esperado %d", got, uint64(gregorian100ns))
+	for _, c := range []struct{ sec, nsec int64 }{
+		{-1, 0},
+		{-1, 1},
+		{-1, 500_000_000},
+		{-1, 999_999_900},
+		{-1, 999_999_999},
+		{-1000, 123_456_700},
+		{-62_135_596_800, 999_999_999}, // ano 1 do calendário
+	} {
+		if got := gregorianFromUnix(c.sec, c.nsec); got != gregorian100ns {
+			t.Errorf("pré-época (%d, %d): %d, esperado %d",
+				c.sec, c.nsec, got, uint64(gregorian100ns))
+		}
+	}
+	if got := gregorianFromUnix(0, 0); got != gregorian100ns {
+		t.Fatalf("época: %d, esperado %d", got, uint64(gregorian100ns))
 	}
 	if got := gregorianFromUnix(0, 100); got != gregorian100ns+1 {
 		t.Fatalf("época + 100 ns: %d, esperado %d", got, uint64(gregorian100ns)+1)
+	}
+
+	// A fronteira não regride: o último instante antes da época não pode
+	// sair à frente do primeiro instante depois dela.
+	if antes, depois := gregorianFromUnix(-1, 999_999_900), gregorianFromUnix(0, 0); antes > depois {
+		t.Fatalf("fronteira da época regride: %d antes, %d depois", antes, depois)
 	}
 }
 

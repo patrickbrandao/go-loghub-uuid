@@ -121,10 +121,16 @@ func timeAndSequenceLocked() (uint64, uint16) {
 // gregorianFromUnix converte segundos desde a época Unix e a fração do
 // segundo em nanossegundos para intervalos de 100 ns desde 15/10/1582.
 // Relógios anteriores a 1970 recebem piso na própria época Unix.
+//
+// O piso zera as duas componentes, como em splitUnixInstant: a fração de
+// segundo que o Go devolve para um instante pré-época é positiva, então
+// zerar só os segundos projetaria o carimbo em até um segundo à frente
+// da época e faria o relógio regredir ao cruzar a fronteira. Ver
+// docs/SPEC.md seção 4.1.
 func gregorianFromUnix(sec, nsec int64) uint64 {
 	if sec < 0 {
 		// Relógio ajustado para antes de 1970: piso na própria época.
-		sec = 0
+		return gregorian100ns
 	}
 	return uint64(sec)*10_000_000 + uint64(nsec/100) + gregorian100ns
 }
