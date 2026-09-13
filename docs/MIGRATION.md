@@ -55,10 +55,18 @@ processo). `NewRandomFromReader` e `NewV7FromReader` devolvem
 `ErrEntropySource` quando o leitor é nulo ou se esgota antes de entregar
 os bytes pedidos.
 
-`Scan` segue a mesma convenção do pacote de origem para valores ausentes:
-`NULL`, string vazia e fatia de bytes vazia gravam o UUID nulo sem erro
-(em `NullUUID`, produzem `Valid` falso). `IsInvalidLengthError` reconhece
-o erro de comprimento mesmo depois de embrulhado com `%w`, como lá.
+**`Scan` de valor ausente diverge do pacote de origem numa consequência,
+apesar de nenhum dos dois devolver erro.** `NULL`, string vazia e fatia
+de bytes vazia são tratados como ausência nas duas bibliotecas, mas o
+pacote do Google simplesmente devolve `nil` sem tocar o destino, enquanto
+aqui o receptor é levado para o UUID nulo (`Nil`, e `Valid` falso em
+`NullUUID`). Isso importa em `database/sql`, que reaproveita o mesmo
+destino a cada linha: uma coluna que alterna entre valor presente e
+ausente, lida com o mesmo destino, preserva o último valor não nulo com
+o pacote do Google e o zera aqui. Medido: `google.MustParse(ref);
+gu.Scan(nil)` deixa `gu` com o valor de referência intacto; o
+equivalente aqui zera. `IsInvalidLengthError` reconhece o erro de
+comprimento mesmo depois de embrulhado com `%w`, como lá.
 
 > **Entropia dos apelidos de compatibilidade:** Os apelidos `New()`,
 > `NewString()`, `NewRandom()` e `NewV7()` usam internamente um gerador
@@ -115,6 +123,21 @@ tique de relógio, o pacote `google/uuid` incrementa a sequência de
 relógio e mantém o carimbo inalterado, enquanto esta biblioteca adianta o
 relógio em um tique de 100 ns por geração. Ambas as abordagens são
 válidas segundo a RFC 9562, mas diferem no carimbo gravado sob rajada.
+
+**`NewV7()` não é estritamente ordenado sob rajada, ao contrário do
+pacote de origem.** O `NewV7` do `google/uuid` mantém um contador interno
+de 12 bits que garante ordem estrita entre chamadas consecutivas no
+mesmo processo, mesmo dentro do mesmo milissegundo. Esta biblioteca
+decidiu não ter contador monotônico (`docs/SPEC.md` seção 11.1): o
+desempate dentro do mesmo milissegundo é aleatório, então duas chamadas
+consecutivas de `NewV7()` (ou de `GenerateV7`/`Generate(Level1)`) podem
+sair fora de ordem. Medido em `tests/compare`: numa rajada de 200 mil
+chamadas, o `NewV7` do Google não regride nenhuma vez; o desta biblioteca
+regride em torno de 50% dos pares consecutivos, porque o relógio do host
+avança mais lento que a geração. Quem depende de ordem estrita sob
+rajada — e não só de ordem cronológica na resolução do milissegundo —
+precisa do `Level2`/`Level3` (que reduzem, mas não eliminam, o empate) ou
+de um contador próprio por fora.
 
 **`SetClockSequence` mantém um piso por sequência.** No pacote
 `google/uuid`, qualquer troca de sequência descarta o último instante
