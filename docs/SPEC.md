@@ -609,6 +609,17 @@ A geração de UUIDs baseados em tempo requer sincronização segura:
 4. Gravar a versão no nibble alto do byte 6 (`0x3` ou `0x5`).
 5. Gravar a variante nos 2 bits superiores do byte 8 (`0b10`).
 
+Os quatro espaços de nomes predefinidos são os da tabela 3 da seção 6.6
+da RFC 9562. Os valores são contrato: um dígito errado muda todo
+identificador de versão 3 e 5 derivado do espaço, sem erro nenhum.
+
+| Espaço de nomes | Valor |
+|:---|:---|
+| `NameSpaceDNS` | `6ba7b810-9dad-11d1-80b4-00c04fd430c8` |
+| `NameSpaceURL` | `6ba7b811-9dad-11d1-80b4-00c04fd430c8` |
+| `NameSpaceOID` | `6ba7b812-9dad-11d1-80b4-00c04fd430c8` |
+| `NameSpaceX500` | `6ba7b814-9dad-11d1-80b4-00c04fd430c8` |
+
 ### 4.5 Versão 4 e Versão 8
 
 - **Versão 4**: 16 bytes preenchidos com aleatoriedade. Sobrescrever o
@@ -1119,9 +1130,13 @@ reais:
      `www.example.com`:
      - V3: `5df41881-3aed-3515-88a7-2f4a814cf09e`
      - V5: `2ed6657d-e927-568b-95e1-2665a8aea6a2`
-   - A RFC não publica vetores para os demais espaços de nomes; vetores
-     adicionais só devem entrar na suíte se forem calculados por uma
-     implementação independente.
+   - Validar os quatro espaços de nomes contra a tabela da seção 4.4,
+     pela forma canônica em texto. O vetor acima só alcança
+     `NameSpaceDNS`: um dígito errado em qualquer dos outros três
+     passaria por todos os demais casos desta seção.
+   - A RFC não publica vetores de geração para os demais espaços de
+     nomes; vetores adicionais só devem entrar na suíte se forem
+     calculados por uma implementação independente.
 6. **Ordenação Temporal Coerente**:
    - Testar que se o instante de B for estritamente superior ao instante de
      A, a comparação de strings e de bytes de B é estritamente maior que a
@@ -1314,7 +1329,8 @@ reais:
       formatos, em texto e em bytes (seção 6.3); extração completa dos
       campos de tempo (seção 7); escrita da forma canônica em buffer do
       chamador com capacidade sobrando; **escrita dos 16 bytes em buffer
-      do chamador com capacidade sobrando**; geração de versão 4; e as
+      do chamador com capacidade sobrando**; geração de versão 4; geração
+      de versão 8, com os bits do chamador e com os bits sorteados; e as
       geradoras de tempo gregoriano (versões 1, 2 e 6).
     - **Exceção única.** A conversão que devolve uma string, pelo relógio
       ou por instante, pode alocar **exatamente uma vez**, porque o
@@ -1354,14 +1370,21 @@ reais:
       de fonte de entropia **não** sejam reconhecidos como erro de
       formato.
 18. **Vetores Dourados das Versões de Tempo Gregoriano (seção 4.1)**:
-    - A RFC 9562 não publica vetores para as versões 1, 2 e 6, e a
-      propriedade de ordenação **não** substitui um vetor: um
-      deslocamento errado por uma casa, aplicado igualmente na geração e
-      na leitura, satisfaz a ordenação, satisfaz a ida e volta e produz
-      um identificador ilegível para qualquer outra implementação. Essa
-      classe de defeito só é detectável por tabela externa, e o
-      cancelamento simétrico é exatamente o que uma refatoração cuidadosa
-      dos dois lados produz.
+    - A RFC 9562 publica vetor de versão 1 (Apêndice A.1) e de versão 6
+      (Apêndice A.5), com o mesmo tempo, a mesma sequência de relógio e
+      o mesmo nó — travados em `tests/rfc_appendix_test.go`. Ela **não**
+      publica vetor de versão 2, fora do escopo da RFC (seção 5.2), e é
+      só para essa versão que a tabela abaixo é a única fonte externa.
+      Em qualquer caso a propriedade de ordenação **não** substitui um
+      vetor: um deslocamento errado por uma casa, aplicado igualmente na
+      geração e na leitura, satisfaz a ordenação, satisfaz a ida e volta
+      e produz um identificador ilegível para qualquer outra
+      implementação. Essa classe de defeito só é detectável por tabela
+      externa, e o cancelamento simétrico é exatamente o que uma
+      refatoração cuidadosa dos dois lados produz. A tabela abaixo cobre
+      também a sequência e o nó do vetor da RFC, mas com valores
+      diferentes dos publicados nela — o vetor 18 é independente, não uma
+      cópia do Apêndice A.
     - Os vetores abaixo **são contrato**, como os do caso 12. Para uma
       sequência de relógio fixa `0x33c8`, um nó fixo
       `02:11:22:33:44:55` (bit multicast ligado) e, na versão 2, domínio
@@ -1423,13 +1446,17 @@ reais:
       Python (que constrói UUIDv1 a partir dos campos e lê o tempo, a
       sequência e o nó de volta) e, na leitura das versões 1 e 2, contra
       o pacote `github.com/google/uuid`, em `tests/compare`. A versão 6
-      **não** tem verificação externa: o pacote do Google, na versão
-      1.6.0, escreve o UUIDv6 com o carimbo de 64 bits gravado inteiro
-      nos bytes 0 a 7 e a versão sobreposta por cima, que não é a ordem
-      de campos da RFC 9562 §5.6, e por isso não serve de referência
-      para esta linha; `tests/compare` mede essa diferença. A linha da
-      versão 6 vale pela fórmula e pela relação com a linha da versão 1,
-      que carrega os mesmos 60 bits.
+      **não** tem verificação contra esse pacote: o pacote do Google, na
+      versão 1.6.0, escreve o UUIDv6 com o carimbo de 64 bits gravado
+      inteiro nos bytes 0 a 7 e a versão sobreposta por cima, que não é a
+      ordem de campos da RFC 9562 §5.6, e por isso não serve de referência
+      para esta linha; `tests/compare` mede essa diferença. Ainda assim a
+      versão 6 tem verificação externa independente do pacote do Google:
+      o vetor do Apêndice A.5 da própria RFC 9562, travado em
+      `tests/rfc_appendix_test.go` (o vetor deste caso 18 é distinto,
+      com sequência e nó próprios deste projeto, não uma cópia do
+      Apêndice A). A linha da versão 6 também vale pela fórmula e pela
+      relação com a linha da versão 1, que carrega os mesmos 60 bits.
 19. **Conversão Gregoriana Inversa Antes de 1970 (seção 4.1)**:
     - Montar UUIDs de versão 1 e 6 com carimbos anteriores à época Unix e
       exigir da conversão inversa o par **canônico**: um tique antes da
@@ -1536,6 +1563,7 @@ pacote faz diferente" não são argumento novo.
 | **A recusa de uma desserialização não altera o receptor; a leitura de valor de banco do tipo anulável é a única exceção, e derruba o booleano de presença.** | 2026-09-12 | A seção 6.4 exigia o receptor inalterado e as seções 8 e 10 exigiam o booleano falso, e a implementação obedecia às duas: o JSON preservava, texto e binário derrubavam, e havia caso de teste para os dois comportamentos opostos. A regra que sobrevive é a de 6.4, que é a convenção da linguagem e a única defensável nos desserializadores: uma entrada recusada não é informação sobre o valor que o receptor já tinha. A exceção do banco tem motivo próprio e não é uniformizável: `database/sql` reaproveita o mesmo destino a cada linha, então quem ignore o erro leria o valor da linha anterior como se fosse o da que falhou; derrubar o booleano transforma o descuido em ausência de valor, e não em dado errado. Os desserializadores não têm destino reaproveitado, e por isso não têm a exceção. | Uma linguagem cuja interface de leitura de banco não reaproveite o destino entre linhas retiraria o motivo da exceção. |
 | **O tipo de escrita binária é adaptador de gravação, não um segundo tipo de identificador: ele não ganha os anexadores em buffer nem os métodos de inspeção e comparação.** | 2026-09-12 | Proposto acrescentar a ele os dois anexadores e oito utilitários (conversão ao tipo base, zerado, máximo, validade, bytes, versão, variante e comparação), sob o argumento de simetria com o tipo simples. A simetria alegada não existe: a regra dos anexadores da seção 7 diz que **quem oferece um deve oferecer o outro**, e o adaptador não oferece nenhum dos dois, de modo que a cumpre; a paridade exigida na seção 8 enumera exatamente os quatro serializadores, com motivo declarado, e o adaptador os tem todos. O tipo anulável simples está na mesma posição e ninguém propôs ampliá-lo, o que mostra que a política real da biblioteca é coerente: anexadores e inspeção vivem no tipo base. O argumento de ergonomia parte de um uso que o próprio tipo desaconselha — campo de modelo de domínio tipado como binário — quando a forma prevista é a conversão no ponto da consulta, `BinaryUUID(u)`, decidida em 2026-09-11. Ampliar a superfície pública criaria um segundo tipo a especificar, testar e versionar em troca de evitar uma conversão que já é explícita de propósito. | Uma interface da biblioteca padrão da linguagem que o adaptador precise satisfazer **como adaptador de gravação**, e não por semelhança com o tipo base. |
 | **A suíte comparativa com o pacote de terceiros roda no trabalho semanal do CI, com falha tolerada, e nunca no CI rápido.** | 2026-09-12 | A suíte existe desde a `v0.5.0` e nenhum trabalho a executava, porque `go test ./...` não desce em módulos aninhados: as afirmações comparativas do projeto voltaram a depender de execução manual. O motivo registrado da exclusão era o CI **rápido**, que não pode depender de rede nem do lançamento de uma versão alheia, e esse motivo não alcança o trabalho semanal, que já tolera falha no fuzzing. Com falha tolerada, uma versão nova do pacote de terceiros muda o resultado do passo sem derrubar o trabalho, que é exatamente o sinal desejado: a diferença de comportamento medida é sobre software que não controlamos. | Um mecanismo de fixação de versão do módulo aninhado que torne o passo determinista permitiria exigir a falha. |
+| **`Nil`, `Max` e os quatro espaços de nomes são variáveis exportadas, sem funções de acesso e sem defesa interna contra alteração; o contrato é a documentação pedir que não sejam alteradas.** | 2026-09-13 | Proposto comparar os predicados de nulo, máximo e validade contra cópias privadas, para que alterar a variável pública não os afetasse, e criar acessores para os espaços de nomes. A defesa não funciona pela metade, e isso foi medido: a biblioteca atribui o nulo em dezoito pontos da análise, da leitura de banco e dos apelidos de compatibilidade, então, com o nulo corrompido, a análise de entrada inválida e a leitura de texto vazio continuam devolvendo o valor corrompido, e o predicado blindado passa a dizer que esse valor não é nulo. Blindar os dezoito pontos ainda deixaria sem proteção a comparação que o chamador escreve contra a variável, que nenhuma implementação alcança. Acessores seriam um segundo nome para cada valor sem proteger quem usa o primeiro, porque as variáveis continuam existindo pela compatibilidade de nomes com o pacote do Google, onde as seis também são variáveis. A linguagem não tem constante de vetor, e a convenção dela para variável exportada que não deve mudar é dizer isso na documentação; alterar a variável é defeito de quem altera. | Uma linguagem-alvo com constante de vetor, em que o valor imutável sai de graça, ou um caso real de corrupção vindo de um uso comum, e não de atribuição deliberada. |
 
 ### 11.4 Como registrar uma decisão nova
 

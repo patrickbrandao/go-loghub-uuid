@@ -2,6 +2,7 @@ package tests
 
 import (
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,24 +105,25 @@ func TestNameBasedIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestNamespacesAreDistinct confere que os quatro espaços de nomes bem
-// conhecidos foram transcritos corretamente e não colidem.
-func TestNamespacesAreDistinct(t *testing.T) {
-	spaces := map[string]uuid.UUID{
-		"DNS":  uuid.NameSpaceDNS,
-		"URL":  uuid.NameSpaceURL,
-		"OID":  uuid.NameSpaceOID,
-		"X500": uuid.NameSpaceX500,
-	}
-	seen := make(map[uuid.UUID]string, len(spaces))
-	for name, u := range spaces {
-		if u.IsZero() {
-			t.Errorf("espaço de nomes %s ficou nulo", name)
+// TestNamespacesMatchRFC confere os quatro espaços de nomes contra a
+// tabela 3 da seção 6.6 da RFC 9562. Um dígito trocado na transcrição
+// muda em silêncio todo UUID de versão 3 e 5 derivado do espaço, e só o
+// espaço DNS tem vetor de geração publicado (TestNameBasedVectors).
+// Valores fixos implicam também que nenhum é nulo e que não colidem.
+func TestNamespacesMatchRFC(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		space uuid.UUID
+		want  string
+	}{
+		{"NameSpaceDNS", uuid.NameSpaceDNS, "6ba7b810-9dad-11d1-80b4-00c04fd430c8"},
+		{"NameSpaceURL", uuid.NameSpaceURL, "6ba7b811-9dad-11d1-80b4-00c04fd430c8"},
+		{"NameSpaceOID", uuid.NameSpaceOID, "6ba7b812-9dad-11d1-80b4-00c04fd430c8"},
+		{"NameSpaceX500", uuid.NameSpaceX500, "6ba7b814-9dad-11d1-80b4-00c04fd430c8"},
+	} {
+		if got := tc.space.String(); got != tc.want {
+			t.Errorf("%s: %s, divergente da RFC 9562 (esperado %s)", tc.name, got, tc.want)
 		}
-		if other, dup := seen[u]; dup {
-			t.Errorf("espaços de nomes %s e %s são iguais", name, other)
-		}
-		seen[u] = name
 	}
 }
 
@@ -353,15 +355,21 @@ func TestNodeIDIsRecoverable(t *testing.T) {
 func TestV2CarriesDomainAndID(t *testing.T) {
 	withIsolatedClockState(t)
 
-	u := uuid.GenerateV2(uuid.Group, 0xDEADBEEF)
+	// Tipado explicitamente: o literal sem sinal, passado direto a uma
+	// função variádica de interface, defasa para "int" e estoura em
+	// plataformas de 32 bits (0xDEADBEEF excede math.MaxInt32). O
+	// identificador local da versão 2 é sempre 32 bits sem sinal.
+	const testID = uint32(0xDEADBEEF)
+
+	u := uuid.GenerateV2(uuid.Group, testID)
 
 	domain, ok := u.Domain()
 	if !ok || domain != uuid.Group {
 		t.Errorf("Domain: %v, ok=%v, esperado Group", domain, ok)
 	}
 	id, ok := u.ID()
-	if !ok || id != 0xDEADBEEF {
-		t.Errorf("ID: %#x, ok=%v, esperado %#x", id, ok, 0xDEADBEEF)
+	if !ok || id != testID {
+		t.Errorf("ID: %#x, ok=%v, esperado %#x", id, ok, testID)
 	}
 	if _, ok := uuid.GenerateV4().Domain(); ok {
 		t.Error("Domain deveria devolver falso para a versão 4")
@@ -751,6 +759,75 @@ func TestGregorianUnixTimeOverflowSaturation(t *testing.T) {
 		}
 		if got, want := c.g.Time(), time.Unix(sec, nsec).UTC(); !got.Equal(want) {
 			t.Errorf("%s: Time() = %v, esperado %v", c.name, got, want)
+		}
+	}
+}
+
+// TestTimeBasedConcurrentUniqueness gera UUIDv1, v2 e v6 de várias
+// goroutines simultâneas e confere ausência de repetição. É o par
+// concorrente de TestTimeBasedUniqueness (serial) e de
+// TestConcurrentUniqueness em generation_test.go, que só cobre a
+// versão 7: sem este teste, remover a trava de clock.go que protege o
+// relógio e o nó compartilhados (clockMu) passa despercebido, inclusive
+// sob o detector de corrida, porque nenhum teste anterior chamava
+// GenerateV1/V2/V6 de mais de uma goroutine ao mesmo tempo. Rode também
+// com -race:
+//
+//	go test ./tests/ -race -run TestTimeBasedConcurrentUniqueness
+func TestTimeBasedConcurrentUniqueness(t *testing.T) {
+	withIsolatedClockState(t)
+	uuid.SetClockSequence(-1)
+
+	const goroutines = 32
+	const perGoroutine = 5_000
+
+	for name, generate := range map[string]func() uuid.UUID{
+		"GenerateV1": uuid.GenerateV1,
+		"GenerateV6": uuid.GenerateV6,
+		"GenerateV2": func() uuid.UUID { return uuid.GenerateV2(uuid.Org, 1) },
+	} {
+		results := make([][]uuid.UUID, goroutines)
+		var wg sync.WaitGroup
+		for w := 0; w < goroutines; w++ {
+			wg.Add(1)
+			go func(w int) {
+				defer wg.Done()
+				batch := make([]uuid.UUID, perGoroutine)
+				for i := range batch {
+					batch[i] = generate()
+				}
+				results[w] = batch
+			}(w)
+		}
+		wg.Wait()
+
+		// A versão 2 sacrifica os 32 bits baixos do tempo pelo
+		// identificador local fixo, então repete dentro da janela de
+		// sete minutos (TestV2RepeatsWithinWindow, documentado): a
+		// unicidade exigida aqui é só de forma (versão e variante), não
+		// de valor.
+		if name == "GenerateV2" {
+			for _, batch := range results {
+				for _, u := range batch {
+					if u.Version() != 2 || u.Variant() != 0b10 {
+						t.Fatalf("%s: UUID corrompido gerado em paralelo: %s", name, u)
+					}
+				}
+			}
+			continue
+		}
+
+		seen := make(map[uuid.UUID]struct{}, goroutines*perGoroutine)
+		for _, batch := range results {
+			for _, u := range batch {
+				if u.Version() == 0 {
+					t.Fatalf("%s: UUID zerado gerado em paralelo", name)
+				}
+				if _, dup := seen[u]; dup {
+					t.Fatalf("%s: UUID duplicado gerado em paralelo: %s", name, u)
+				}
+				seen[u] = struct{}{}
+			}
 		}
 	}
 }

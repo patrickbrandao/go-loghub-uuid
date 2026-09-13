@@ -138,3 +138,52 @@ func TestSubMillisecondMatchesClock(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerateV4UsesGeneratorSource confere que GenerateV4 tira os 128
+// bits de fato da fonte do Generator, e não de outra — em particular, do
+// gerador padrão do pacote. Com entropia nula, os bits não-fixos (tudo
+// exceto os 4 de versão e os 2 de variante) têm de sair zerados.
+//
+// REGRESSÃO: um teste de mutação que fizesse Generator.GenerateV4
+// ignorar sua própria fonte e delegar para defaultGenerator.GenerateV4()
+// passava pela suíte inteira: todo teste existente confere só a forma
+// (versão 4, variante RFC), nunca o valor contra a fonte fornecida.
+func TestGenerateV4UsesGeneratorSource(t *testing.T) {
+	g := uuid.NewGeneratorWith(constantSource(0))
+	u := g.GenerateV4()
+
+	want := uuid.UUID{
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
+		0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+	if u != want {
+		t.Errorf("GenerateV4 com fonte nula = %x, esperado %x (só versão e variante fixas)", u[:], want[:])
+	}
+
+	// Com todos os bits em um, só a versão e a variante permanecem fixas.
+	g = uuid.NewGeneratorWith(constantSource(^uint64(0)))
+	u = g.GenerateV4()
+	wantFull := uuid.UUID{
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x4F, 0xFF,
+		0xBF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	}
+	if u != wantFull {
+		t.Errorf("GenerateV4 com fonte em 1 = %x, esperado %x", u[:], wantFull[:])
+	}
+}
+
+// TestGeneratorGenerateV8UsesGeneratorSource confere o mesmo para o
+// método GenerateV8 do Generator: os 122 bits livres vêm desta fonte, e
+// não do gerador padrão do pacote.
+func TestGeneratorGenerateV8UsesGeneratorSource(t *testing.T) {
+	g := uuid.NewGeneratorWith(constantSource(0))
+	u := g.GenerateV8()
+
+	want := uuid.UUID{
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00,
+		0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+	if u != want {
+		t.Errorf("Generator.GenerateV8 com fonte nula = %x, esperado %x", u[:], want[:])
+	}
+}

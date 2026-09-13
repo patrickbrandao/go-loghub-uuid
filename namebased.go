@@ -10,7 +10,8 @@ import (
 	"hash"
 )
 
-// Espaços de nomes conhecidos, definidos no apêndice da RFC 9562.
+// Espaços de nomes conhecidos, definidos na seção 6.6 da RFC 9562. Não
+// altere o valor destas variáveis.
 var (
 	// NameSpaceDNS é o espaço de nomes de domínio.
 	NameSpaceDNS = MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")

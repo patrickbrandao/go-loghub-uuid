@@ -87,6 +87,7 @@ go-loghub-uuid/
     ├── binary_sql_test.go      # BinaryUUID e NullBinaryUUID
     ├── binary_serialization_test.go # serialização JSON, texto e binário dos tipos binários
     ├── golden_test.go          # vetores dourados: extensão multinível e versões 1, 2 e 6
+    ├── rfc_appendix_test.go    # vetores dos Apêndices A e B da própria RFC 9562 (v1,v3,v4,v5,v6,v7,v8)
     ├── clockstate_test.go      # isolamento do nó e da sequência entre testes
     ├── fuzz_test.go            # FuzzFromString, FuzzParse, FuzzNullUUIDJSON,
     │                            # FuzzInstantArithmetic e FuzzGregorianUnixTime
