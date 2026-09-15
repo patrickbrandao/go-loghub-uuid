@@ -8,7 +8,8 @@ ter para ser aceita. As regras completas de manutenção estão em
 
 - Abra uma issue descrevendo o problema ou a proposta antes de um pull
   request grande.
-- **Consulte antes a seção 11 do `docs/SPEC.md`**, o registro de decisões
+- **Consulte antes a seção 11 do
+  `docs/10-armadilhas-e-decisoes-de-projeto.md`**, o registro de decisões
   firmadas. Ela diz o que já foi avaliado e decidido — fonte de entropia
   do gerador padrão, ausência de contador monotônico, relógio não
   injetável, as duplicações deliberadas de código, a permanência em
@@ -62,7 +63,7 @@ go test ./tests/ -short -run 'Allocations|SingleAllocation' -v  # travas de aloc
 ```
 
 As travas de alocação são medidas sem `-race` de propósito; o motivo
-está em `CLAUDE.md` e em `docs/TEST-AND-BENCHMARK.md`.
+está em `CLAUDE.md` e em `docs/11-testes-e-benchmark.md`.
 
 A integração contínua roda esses mesmos passos no Go 1.22 e na versão
 estável, em Linux, e a suíte curta em Windows e macOS. Um pull request

@@ -9,10 +9,11 @@ import (
 )
 
 // Este arquivo confere os vetores dourados das versões 1 e 2 publicados
-// em docs/SPEC.md seção 10, caso 18, contra o LEITOR do pacote
-// github.com/google/uuid: os mesmos bytes, dois leitores independentes,
-// os mesmos campos. É a metade externa da verificação; a metade por
-// fórmula, e o escritor, estão em tests/golden_test.go.
+// em docs/09-vetores-dourados-e-apendice-rfc.md seção 10, caso 18, contra
+// o LEITOR do pacote github.com/google/uuid: os mesmos bytes, dois
+// leitores independentes, os mesmos campos. É a metade externa da
+// verificação; a metade por fórmula, e o escritor, estão em
+// tests/golden_test.go.
 //
 // A versão 6 fica de fora de propósito, e o motivo é medido abaixo, não
 // suposto.
@@ -96,8 +97,8 @@ func TestGoogleReadsGregorianGoldenVectors(t *testing.T) {
 //
 // Se este teste FALHAR por o instante lido pela RFC passar a bater, o
 // outro pacote corrigiu o layout e a documentacao deste projeto passou a
-// estar errada: corrija docs/SPEC.md caso 18 e passe a conferir a versao
-// 6 tambem.
+// estar errada: corrija docs/09-vetores-dourados-e-apendice-rfc.md caso
+// 18 e passe a conferir a versao 6 tambem.
 func TestGoogleV6LayoutDiffersFromRFC9562(t *testing.T) {
 	agora := time.Now()
 	g, err := google.NewV6()
@@ -124,7 +125,7 @@ func TestGoogleV6LayoutDiffersFromRFC9562(t *testing.T) {
 	const umAno = 365 * 24 * time.Hour
 	if desvioRFC < umAno && desvioRFC > -umAno {
 		t.Errorf("o UUIDv6 do google lido pela RFC 9562 caiu a %v do relogio; esperava-se seculos de distancia. "+
-			"O pacote mudou o layout? Atualize docs/SPEC.md caso 18", desvioRFC)
+			"O pacote mudou o layout? Atualize docs/09-vetores-dourados-e-apendice-rfc.md caso 18", desvioRFC)
 	}
 	if desvioGoogle > time.Second || desvioGoogle < -time.Second {
 		t.Errorf("o leitor do google leu o proprio UUIDv6 a %v do relogio; esperava-se menos de um segundo", desvioGoogle)

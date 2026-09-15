@@ -101,7 +101,8 @@ type NullUUID struct {
 //
 // Em caso de erro o identificador não é alterado, mas o booleano cai para
 // falso. É a única exceção à regra de receptor inalterado que vale para
-// os desserializadores (docs/SPEC.md seção 6.4), e tem motivo próprio:
+// os desserializadores (docs/07-parsing-e-conversao.md seção 6.4), e tem
+// motivo próprio:
 // database/sql reaproveita o mesmo destino a cada linha, então um
 // chamador que ignore o erro leria o valor da linha anterior como se
 // fosse o da linha que falhou. Zerar o booleano transforma esse descuido

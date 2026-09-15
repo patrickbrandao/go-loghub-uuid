@@ -30,7 +30,7 @@ func main() {
 	// medido paga sozinho o custo de aquecer cache de instruções e
 	// escalonamento de frequência da CPU, e aparece artificialmente mais
 	// lento que os demais — viés que já distorceu as tabelas publicadas
-	// em docs/TEST-AND-BENCHMARK.md.
+	// em docs/11-testes-e-benchmark.md.
 	warmup := *n / 10
 	if warmup > 100_000 {
 		warmup = 100_000

@@ -23,7 +23,7 @@ import uuid "github.com/patrickbrandao/go-loghub-uuid"
 ## Tipos
 
 | Tipo        | Descrição                                                     |
-|-------------|---------------------------------------------------------------|
+|-------------|-----------------------------------------------------------------|
 | `Level`     | Nível de precisão: `Level1`, `Level2`, `Level3`.              |
 | `UUID`      | `[16]byte` — o valor binário de 128 bits.                     |
 | `Generator` | Objeto gerador, criado no boot, seguro para concorrência.     |
@@ -31,7 +31,7 @@ import uuid "github.com/patrickbrandao/go-loghub-uuid"
 | `Domain`    | Domínio da versão 2: `Person`, `Group`, `Org`.                |
 | `GregorianTime` | Tempo das versões 1 e 6, em tiques de 100 ns desde 1582.  |
 | `NullUUID`  | UUID que pode ser `NULL` no banco de dados.                   |
-| `UUIDs`     | Lista de UUIDs, com `Strings()`.                              |
+| `UUIDs`     | Lista de UUIDs, com `Strings()`.                               |
 
 ```go
 type Time struct {
@@ -42,10 +42,12 @@ type Time struct {
 }
 ```
 
-> A importação é cega quanto ao nível (ver abaixo): em UUIDs de Nível 1 os
-> campos `Microseconds` e `Nanoseconds` são bits aleatórios lidos como se
-> fossem tempo, e por isso podem ultrapassar 999. Não valide esses campos
-> contra 0..999 sem saber o nível de origem.
+> A importação é cega quanto ao nível (ver
+> [08-inspecao-serializacao-banco.md](08-inspecao-serializacao-banco.md)):
+> em UUIDs de Nível 1 os campos `Microseconds` e `Nanoseconds` são bits
+> aleatórios lidos como se fossem tempo, e por isso podem ultrapassar
+> 999. Não valide esses campos contra 0..999 sem saber o nível de
+> origem.
 
 ---
 
@@ -433,7 +435,7 @@ exige filtro adicional.
 A fronteira é tão precisa quanto o nível:
 
 | Nível    | A faixa delimita |
-|----------|------------------|
+|----------|-------------------|
 | `Level1` | o milissegundo inteiro |
 | `Level2` | o microssegundo |
 | `Level3` | o nanossegundo |
@@ -552,7 +554,9 @@ string canônica, não os bytes — `fmt.Printf("%x", u.Bytes())` imprime os
 A biblioteca cobre todas as versões da RFC 9562. Nenhuma delas passa pelo
 caminho do UUIDv7, que continua sem trava e sem alocações. A própria
 versão 7 pelo nome, `GenerateV7` e `GenerateV7Level1` a
-`GenerateV7Level3`, está na seção "Gerar" acima.
+`GenerateV7Level3`, está na seção "Gerar" acima. Ver
+[05-outras-versoes-uuid.md](05-outras-versoes-uuid.md) para a
+especificação completa de cada uma.
 
 ### Versão 4 — aleatória
 
@@ -604,7 +608,9 @@ mas significa que o carimbo de tempo de um UUIDv1 ou UUIDv6 não é leitura
 fiel do relógio sob carga sustentada. O mesmo mecanismo cobre um relógio
 do sistema atrasado por ajuste manual ou NTP: os instantes continuam
 crescendo a partir do último emitido, adiantados em relação ao relógio
-real, até ele os alcançar ou até uma ressincronização explícita.
+real, até ele os alcançar ou até uma ressincronização explícita. Ver
+[06-relogio-e-concorrencia.md](06-relogio-e-concorrencia.md) para o
+mecanismo completo.
 
 Para descartar esse adiantamento e voltar a acompanhar o relógio do
 sistema, sorteie uma sequência de relógio inédita:
@@ -668,6 +674,9 @@ Todos os erros continuam reconhecíveis pelo sentinela antigo:
 if errors.Is(err, uuid.ErrInvalidFormat) { ... }
 if uuid.IsInvalidLengthError(err) { ... }  // caso específico de comprimento
 ```
+
+Ver [07-parsing-e-conversao.md](07-parsing-e-conversao.md) para a
+especificação completa dos quatro formatos e da taxonomia de erros.
 
 ## JSON, texto e binário
 
@@ -785,13 +794,17 @@ rows, err := db.Query(
 )
 ```
 
+Ver [08-inspecao-serializacao-banco.md](08-inspecao-serializacao-banco.md)
+para a especificação normativa completa de serialização e banco de
+dados.
+
 ## Quando usar cada nível
 
 | Nível    | Precisão embutida        | Aleatoriedade restante | Uso típico                                   |
-|----------|--------------------------|------------------------|----------------------------------------------|
-| `Level1` | milissegundos            | 74 bits                | UUIDv7 padrão; máxima compatibilidade        |
-| `Level2` | + microssegundos         | 62 bits                | ordenação mais fina dentro do mesmo ms       |
-| `Level3` | + micro e nanossegundos  | 52 bits                | logs/eventos de altíssima frequência         |
+|----------|----------------------------|-------------------------|------------------------------------------------|
+| `Level1` | milissegundos             | 74 bits                | UUIDv7 padrão; máxima compatibilidade        |
+| `Level2` | + microssegundos          | 62 bits                | ordenação mais fina dentro do mesmo ms       |
+| `Level3` | + micro e nanossegundos   | 52 bits                | logs/eventos de altíssima frequência         |
 
 Quanto maior o nível, mais bits de tempo e menos bits aleatórios. Em
 todos, a colisão é praticamente desprezível para volumes normais, mas se

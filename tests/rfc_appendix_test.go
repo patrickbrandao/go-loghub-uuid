@@ -16,12 +16,14 @@ import (
 // para as versões 1, 3, 4, 5, 6 e 7 no Apêndice A, e dois exemplos de
 // versão 8 no Apêndice B; não há vetor de versão 2, fora do escopo da
 // RFC (seção 5.2). Antes deste arquivo, só V3 e V5 (caso obrigatório 5
-// da seção 10 de docs/SPEC.md) estavam travados contra a RFC: os demais
-// vetores existiam só como documentação (docs/SPEC.md seção 10, caso 18,
-// e o comentário deste pacote em golden_test.go), sem teste algum —
-// nenhum dos dois lugares nota que a RFC também publica vetor de V1 e
-// V6, apesar de os dois afirmarem o contrário. Ver docs/SPEC.md seção
-// 10 caso 18 e a correção registrada no CHANGELOG.
+// da seção 10 de docs/09-vetores-dourados-e-apendice-rfc.md) estavam
+// travados contra a RFC: os demais vetores existiam só como documentação
+// (docs/09-vetores-dourados-e-apendice-rfc.md seção 10, caso 18, e o
+// comentário deste pacote em golden_test.go), sem teste algum — nenhum
+// dos dois lugares nota que a RFC também publica vetor de V1 e V6,
+// apesar de os dois afirmarem o contrário. Ver
+// docs/09-vetores-dourados-e-apendice-rfc.md seção 10 caso 18 e a
+// correção registrada no CHANGELOG.
 
 const (
 	rfcA1V1 = "C232AB00-9414-11EC-B3C8-9F6BDECED846"
@@ -86,7 +88,7 @@ func TestRFCAppendixA1A5ReadV1V6(t *testing.T) {
 // valores do Apêndice A: com a sequência e o nó fixados nos valores
 // publicados, GenerateV1 e GenerateV6 gravam esses mesmos campos nos
 // bytes 8 a 15 (o tempo não é fixável, por não haver relógio injetável —
-// ver docs/SPEC.md seção 11.2).
+// ver docs/10-armadilhas-e-decisoes-de-projeto.md seção 11.2).
 func TestRFCAppendixA1A5GenerateV1V6(t *testing.T) {
 	withIsolatedClockState(t)
 	uuid.SetClockSequence(0x33C8)

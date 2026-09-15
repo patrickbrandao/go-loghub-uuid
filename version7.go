@@ -9,7 +9,8 @@ package loghubuuid
 // implementação: o compilador os embute, e o caminho quente não ganha
 // chamada, desvio nem custo algum. Nenhum recebe parâmetro e nenhum tem
 // forma em texto; para a string canônica use GenerateString com o nível,
-// ou o método String do valor devolvido. Ver docs/SPEC.md seção 3.1.
+// ou o método String do valor devolvido. Ver
+// docs/04-uuidv7-formato-e-niveis.md seção 3.1.
 
 // GenerateV7 produz um UUID de versão 7 padrão da RFC 9562: carimbo Unix
 // em milissegundos nos 48 bits altos, versão 7, variante RFC e os 74 bits
@@ -32,7 +33,7 @@ package loghubuuid
 //
 // O apelido não acrescenta custo ao caminho quente: a implementação
 // continua em Generate, e o compilador embute esta chamada. Ver
-// docs/SPEC.md seção 3.1.
+// docs/04-uuidv7-formato-e-niveis.md seção 3.1.
 func (g *Generator) GenerateV7() UUID { return g.Generate(Level1) }
 
 // GenerateV7 produz um UUID de versão 7 padrão (Nível 1) usando o gerador

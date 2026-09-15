@@ -29,7 +29,7 @@ pedido em contrário.
 
 Esta biblioteca gera identificadores para registros, chaves primárias e
 correlação de logs. Os pontos abaixo são propriedades do projeto, já
-documentadas no `README.md` e em `docs/DEPLOY-FULL.md`, e não são
+documentadas no `README.md` e em `docs/03-guia-completo.md`, e não são
 considerados vulnerabilidades:
 
 - **O gerador padrão não serve para segredos.** `NewGenerator` e as

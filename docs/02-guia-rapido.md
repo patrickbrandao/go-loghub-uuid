@@ -104,4 +104,4 @@ momento da importação.
 ---
 
 Para todas as funções (binário, conversões, importação de tempo, coluna
-binária de 16 bytes), veja [DEPLOY-FULL.md](DEPLOY-FULL.md).
+binária de 16 bytes), veja [03-guia-completo.md](03-guia-completo.md).

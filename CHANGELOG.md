@@ -19,6 +19,46 @@ Convenções de cada seção:
 
 ## [Não publicado]
 
+### Documentação
+
+- **`docs/` reorganizada em arquivos numerados por tema, com índice.**
+  Os seis documentos anteriores — `SPEC.md` (1573 linhas, seções 1 a
+  11), `DEPLOY-FAST.md`, `DEPLOY-FULL.md`, `MIGRATION.md`,
+  `TEST-AND-BENCHMARK.md` e `RELEASE.md` — foram removidos e o conteúdo
+  redistribuído em treze arquivos `nn-titulo.md`, um assunto cada, mais
+  `docs/INDEX.md` com a ordem de leitura e o que cada um cobre. Nenhum
+  conteúdo técnico, decisão ou motivo foi descartado; a numeração de
+  seção original (`§3.5`, `§11.2` etc.) foi preservada dentro dos
+  arquivos, de modo que toda referência por número continua localizável
+  por busca. Correspondência: seções 1 e 2 de `SPEC.md` em
+  `01-visao-geral.md`; `DEPLOY-FAST.md` em `02-guia-rapido.md`;
+  `DEPLOY-FULL.md` em `03-guia-completo.md`; seção 3 em
+  `04-uuidv7-formato-e-niveis.md`; seções 4.1 e 4.3 a 4.5 em
+  `05-outras-versoes-uuid.md`; seções 4.2 e 5 em
+  `06-relogio-e-concorrencia.md`; seção 6 em `07-parsing-e-conversao.md`;
+  seções 7 e 8 em `08-inspecao-serializacao-banco.md`; seção 10 em
+  `09-vetores-dourados-e-apendice-rfc.md`; seções 9 e 11 (o registro de
+  decisões firmadas) em `10-armadilhas-e-decisoes-de-projeto.md`;
+  `TEST-AND-BENCHMARK.md` em `11-testes-e-benchmark.md`; `MIGRATION.md`
+  em `12-migracao-google-uuid.md`; `RELEASE.md` em
+  `13-processo-de-release.md`. As entradas anteriores deste histórico
+  continuam citando os nomes antigos, porque descrevem o que existia na
+  data de cada uma; use a correspondência acima para chegar ao arquivo
+  atual. Toda referência viva fora deste histórico — `README.md`,
+  `STARTHERE.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `SECURITY.md`,
+  `.github/workflows/ci.yml` e os comentários de `clock.go`,
+  `construct.go`, `sql.go`, `version7.go`, `example_test.go` e da suíte
+  em `tests/` — passou a apontar para o arquivo novo correspondente.
+- **`skill/SKILL.md` criado**: pacote no formato Agent Skills
+  (`agentskills.io`) que ensina agentes de IA a consumir a biblioteca em
+  código Go — instalação, regras de uso, tabela de qual versão e nível
+  escolher, referência da API pública inteira, oito exemplos (chave
+  primária UUIDv7, consulta por intervalo, análise de entrada externa,
+  `NullUUID` com `database/sql`, v4, v5, gerador com `crypto/rand` e
+  migração de `github.com/google/uuid`) e a lista de armadilhas. Não
+  repete a especificação; remete a `docs/`. Fica fora da raiz, como
+  `docs/` e `tests/`, e `STARTHERE.md` e `CLAUDE.md` registram a pasta.
+
 ## [v0.6.1] — 2026-09-13
 
 Ciclo de revisão completa com teste de mutação (1.809 mutantes sobre o
@@ -1692,11 +1732,12 @@ decididas em 2026-09-11 e publicadas na `v0.4.0`: a troca da fonte de
 entropia e as três adições de API foram feitas; o gerador monotônico e o
 relógio injetável foram recusados.
 
-**O registro canônico de decisões é a seção 11 do
-[docs/SPEC.md](docs/SPEC.md)**, que lista cada uma com o motivo e o que
-justificaria revê-la. Este arquivo guarda o histórico — quando cada
-decisão foi tomada e o que mudou junto —, mas quem for propor ou auditar
-deve ler a especificação primeiro. Decisão nova entra nos dois lugares.
+**O registro canônico de decisões é a seção 11 de
+[docs/10-armadilhas-e-decisoes-de-projeto.md](docs/10-armadilhas-e-decisoes-de-projeto.md)**,
+que lista cada uma com o motivo e o que justificaria revê-la. Este
+arquivo guarda o histórico — quando cada decisão foi tomada e o que
+mudou junto —, mas quem for propor ou auditar deve ler a especificação
+primeiro. Decisão nova entra nos dois lugares.
 
 [Não publicado]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.6.1...HEAD
 [v0.6.1]: https://github.com/patrickbrandao/go-loghub-uuid/compare/v0.6.0...v0.6.1

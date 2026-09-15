@@ -13,13 +13,13 @@ import (
 const referenciaScan = "0192f7c5-1a2b-7c3d-8e4f-aabbccddeeff"
 
 // TestGoogleScanAbsentDoesNotTouchDestination mede a divergência
-// documentada em docs/MIGRATION.md §1 e em CLAUDE.md: Scan de um valor
-// ausente (nil, string vazia ou fatia de bytes vazia) não devolve erro
-// em nenhuma das duas bibliotecas, mas o pacote do Google não escreve no
-// destino nesse caso, enquanto esta biblioteca sempre grava o UUID nulo
-// (e, em NullUUID, Valid falso). Quem reaproveita o destino entre linhas
-// — o próprio database/sql — vê o valor da linha anterior sobreviver lá
-// e desaparecer aqui.
+// documentada em docs/12-migracao-google-uuid.md §1 e em CLAUDE.md: Scan
+// de um valor ausente (nil, string vazia ou fatia de bytes vazia) não
+// devolve erro em nenhuma das duas bibliotecas, mas o pacote do Google
+// não escreve no destino nesse caso, enquanto esta biblioteca sempre
+// grava o UUID nulo (e, em NullUUID, Valid falso). Quem reaproveita o
+// destino entre linhas — o próprio database/sql — vê o valor da linha
+// anterior sobreviver lá e desaparecer aqui.
 func TestGoogleScanAbsentDoesNotTouchDestination(t *testing.T) {
 	for _, ausente := range []any{nil, "", []byte{}} {
 		gu := google.MustParse(referenciaScan)
