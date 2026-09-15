@@ -9,11 +9,12 @@ import (
 )
 
 // TestNewV7OrderingDiffersFromGoogle mede a divergência documentada em
-// docs/MIGRATION.md §2: o NewV7 do pacote do Google mantém um contador
-// interno que garante ordem estrita entre chamadas consecutivas, mesmo
-// dentro do mesmo milissegundo; esta biblioteca decidiu não ter contador
-// monotônico (docs/SPEC.md seção 11.1), então o desempate dentro do
-// milissegundo é aleatório e a ordem pode regredir.
+// docs/12-migracao-google-uuid.md §2: o NewV7 do pacote do Google mantém
+// um contador interno que garante ordem estrita entre chamadas
+// consecutivas, mesmo dentro do mesmo milissegundo; esta biblioteca
+// decidiu não ter contador monotônico
+// (docs/10-armadilhas-e-decisoes-de-projeto.md seção 11.1), então o
+// desempate dentro do milissegundo é aleatório e a ordem pode regredir.
 //
 // Não afirma um número exato de regressões — depende da velocidade do
 // host e do relógio, como TestTieRateReport já registra para o restante

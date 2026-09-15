@@ -45,7 +45,8 @@ type GregorianTime int64
 // (0, -100) em vez de (-1, 999_999_900). time.Unix normalizaria os dois
 // para o mesmo instante, mas quem consome sec e nsec diretamente não
 // deve receber resto negativo. A resolução é a do campo, 100 ns: os dois
-// dígitos finais de nsec são sempre zero. Ver docs/SPEC.md seção 4.1.
+// dígitos finais de nsec são sempre zero. Ver
+// docs/05-outras-versoes-uuid.md seção 4.1.
 //
 // Valores fora do domínio do campo (0 .. 2^60-1) são aceitos, mas
 // saturados: se int64(t) < minGregorianTicks, a subtração estouraria
@@ -126,7 +127,7 @@ func timeAndSequenceLocked() (uint64, uint16) {
 // segundo que o Go devolve para um instante pré-época é positiva, então
 // zerar só os segundos projetaria o carimbo em até um segundo à frente
 // da época e faria o relógio regredir ao cruzar a fronteira. Ver
-// docs/SPEC.md seção 4.1.
+// docs/05-outras-versoes-uuid.md seção 4.1.
 func gregorianFromUnix(sec, nsec int64) uint64 {
 	if sec < 0 {
 		// Relógio ajustado para antes de 1970: piso na própria época.

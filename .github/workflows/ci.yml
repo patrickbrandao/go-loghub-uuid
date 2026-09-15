@@ -214,7 +214,8 @@ jobs:
       # pacote github.com/google/uuid. A falha é tolerada de propósito: o
       # que ela mede é o comportamento de software que não controlamos, e
       # uma versão nova do outro pacote deve mudar o resultado do passo sem
-      # derrubar o trabalho. Ver docs/SPEC.md seção 11.3.
+      # derrubar o trabalho. Ver
+      # docs/10-armadilhas-e-decisoes-de-projeto.md seção 11.3.
       - name: Comparação com github.com/google/uuid (módulo aninhado)
         id: compare
         continue-on-error: true
@@ -224,7 +225,7 @@ jobs:
       - name: Resultado da comparação
         if: steps.compare.outcome == 'failure'
         run: |
-          echo "::warning::A suíte comparativa falhou. Confira se o comportamento medido em github.com/google/uuid mudou e atualize docs/MIGRATION.md e docs/SPEC.md secao 4.2."
+          echo "::warning::A suíte comparativa falhou. Confira se o comportamento medido em github.com/google/uuid mudou e atualize docs/12-migracao-google-uuid.md e docs/06-relogio-e-concorrencia.md secao 4.2."
 
       # Os cinco alvos rodam sempre, mesmo que um falhe (continue-on-error),
       # para que uma campanha não esconda a falha da seguinte; o passo
@@ -263,7 +264,7 @@ jobs:
         # O Go grava a entrada que quebrou o alvo em
         # tests/testdata/fuzz/<Alvo>/<hash>. Sem este passo ela morre com o
         # runner. O procedimento de reprodução está em
-        # docs/TEST-AND-BENCHMARK.md.
+        # docs/11-testes-e-benchmark.md.
         if: always()
         uses: actions/upload-artifact@v7
         with:

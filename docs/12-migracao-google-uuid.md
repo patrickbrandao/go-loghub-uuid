@@ -21,7 +21,7 @@ import uuid "github.com/patrickbrandao/go-loghub-uuid"
 Com isso continuam compilando, com a mesma assinatura de antes:
 
 | Chamada                              | Versão gerada        |
-|--------------------------------------|----------------------|
+|--------------------------------------|-----------------------|
 | `uuid.New()`                         | 4                    |
 | `uuid.NewString()`                   | 4, em texto          |
 | `uuid.NewRandom()`                   | 4                    |
@@ -128,16 +128,18 @@ válidas segundo a RFC 9562, mas diferem no carimbo gravado sob rajada.
 pacote de origem.** O `NewV7` do `google/uuid` mantém um contador interno
 de 12 bits que garante ordem estrita entre chamadas consecutivas no
 mesmo processo, mesmo dentro do mesmo milissegundo. Esta biblioteca
-decidiu não ter contador monotônico (`docs/SPEC.md` seção 11.1): o
-desempate dentro do mesmo milissegundo é aleatório, então duas chamadas
-consecutivas de `NewV7()` (ou de `GenerateV7`/`Generate(Level1)`) podem
-sair fora de ordem. Medido em `tests/compare`: numa rajada de 200 mil
-chamadas, o `NewV7` do Google não regride nenhuma vez; o desta biblioteca
-regride em torno de 50% dos pares consecutivos, porque o relógio do host
-avança mais lento que a geração. Quem depende de ordem estrita sob
-rajada — e não só de ordem cronológica na resolução do milissegundo —
-precisa do `Level2`/`Level3` (que reduzem, mas não eliminam, o empate) ou
-de um contador próprio por fora.
+decidiu não ter contador monotônico
+([10-armadilhas-e-decisoes-de-projeto.md](10-armadilhas-e-decisoes-de-projeto.md)
+seção 11.1): o desempate dentro do mesmo milissegundo é aleatório, então
+duas chamadas consecutivas de `NewV7()` (ou de
+`GenerateV7`/`Generate(Level1)`) podem sair fora de ordem. Medido em
+`tests/compare`: numa rajada de 200 mil chamadas, o `NewV7` do Google
+não regride nenhuma vez; o desta biblioteca regride em torno de 50% dos
+pares consecutivos, porque o relógio do host avança mais lento que a
+geração. Quem depende de ordem estrita sob rajada — e não só de ordem
+cronológica na resolução do milissegundo — precisa do `Level2`/`Level3`
+(que reduzem, mas não eliminam, o empate) ou de um contador próprio por
+fora.
 
 **`SetClockSequence` mantém um piso por sequência.** No pacote
 `google/uuid`, qualquer troca de sequência descarta o último instante
@@ -228,6 +230,9 @@ de um UUIDv1 dentro do mesmo tique de 100 nanossegundos:
 As duas são permitidas pela RFC 9562. A consequência prática que importa
 na migração: **lá a sequência muda sozinha debaixo do seu código durante
 uma rajada**, e aqui o instante embutido se adianta do relógio de parede.
+Ver
+[06-relogio-e-concorrencia.md](06-relogio-e-concorrencia.md) seção 4.2
+para o mecanismo completo.
 
 Há também uma diferença de unicidade. Como o pacote do Google zera o
 piso do relógio sempre que a sequência muda de valor, um código que
@@ -252,7 +257,8 @@ cd tests/compare && go test -v ./...
 
 - **Três níveis de precisão no UUIDv7**: `Level2` grava microssegundos e
   `Level3` grava também nanossegundos, dentro dos campos aleatórios, sem
-  quebrar versão nem variante. Veja [SPEC.md](SPEC.md).
+  quebrar versão nem variante. Veja
+  [04-uuidv7-formato-e-niveis.md](04-uuidv7-formato-e-niveis.md).
 - **`TimestampWithLevel`**: recupera a precisão sub-milissegundo de
   volta como `time.Time`.
 - **`Import` e `ImportBinary`**: extraem segundos, milissegundos,

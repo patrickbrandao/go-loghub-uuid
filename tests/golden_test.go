@@ -9,7 +9,8 @@ import (
 )
 
 // Este arquivo guarda os vetores dourados da extensão multinível,
-// publicados em docs/SPEC.md seção 10, caso obrigatório 12.
+// publicados em docs/09-vetores-dourados-e-apendice-rfc.md seção 10,
+// caso obrigatório 12.
 //
 // Eles são CONTRATO, não teste comum: uma implementação em outra
 // linguagem confere o próprio empacotamento contra esta tabela. Mudar
@@ -142,13 +143,13 @@ func TestGoldenVectorPreEpochFloorsToEpoch(t *testing.T) {
 // --- vetores dourados das versões de tempo gregoriano (caso 18) ---
 
 // A segunda tabela deste arquivo cobre as versões 1, 2 e 6, publicadas
-// em docs/SPEC.md seção 10, caso obrigatório 18. A RFC 9562 não tem
-// vetores para elas, e a ordenação crescente não substitui um vetor: um
-// deslocamento errado por uma casa, aplicado igualmente em version1.go e
-// em inspect.go, passa em toda a suíte e produz um identificador que
-// nenhuma outra implementação lê. É esse cancelamento simétrico que a
-// tabela fecha: ela fixa o leitor, e o reempacotamento de referência
-// abaixo fixa o escritor.
+// em docs/09-vetores-dourados-e-apendice-rfc.md seção 10, caso
+// obrigatório 18. A RFC 9562 não tem vetores para elas, e a ordenação
+// crescente não substitui um vetor: um deslocamento errado por uma casa,
+// aplicado igualmente em version1.go e em inspect.go, passa em toda a
+// suíte e produz um identificador que nenhuma outra implementação lê. É
+// esse cancelamento simétrico que a tabela fecha: ela fixa o leitor, e o
+// reempacotamento de referência abaixo fixa o escritor.
 //
 // Os valores foram calculados por um programa escrito a partir das
 // fórmulas da seção 4.1, sem chamar esta biblioteca, e conferidos na
@@ -357,12 +358,13 @@ func TestGregorianGoldenVectorsRelateV1V2V6(t *testing.T) {
 }
 
 // TestGregorianGenerationMatchesReferencePacker fixa o ESCRITOR. O
-// relógio não é injetável (docs/SPEC.md seção 11.2), então a geração é
-// conferida em duas partes: com a sequência e o nó fixados, o UUID
-// gerado carrega esses campos; e o instante lido de volta, reempacotado
-// pela função de referência deste arquivo, reproduz os 16 bytes. Um
-// deslocamento errado em version1.go e em inspect.go ao mesmo tempo
-// passa na ida e volta da biblioteca, mas não passa aqui.
+// relógio não é injetável (docs/10-armadilhas-e-decisoes-de-projeto.md
+// seção 11.2), então a geração é conferida em duas partes: com a
+// sequência e o nó fixados, o UUID gerado carrega esses campos; e o
+// instante lido de volta, reempacotado pela função de referência deste
+// arquivo, reproduz os 16 bytes. Um deslocamento errado em version1.go e
+// em inspect.go ao mesmo tempo passa na ida e volta da biblioteca, mas
+// não passa aqui.
 func TestGregorianGenerationMatchesReferencePacker(t *testing.T) {
 	withIsolatedClockState(t)
 	uuid.SetClockSequence(goldenSeq)

@@ -72,7 +72,7 @@ func TestGenerateAtRoundTripsThroughImport(t *testing.T) {
 // Com a mesma fonte de entropia constante, gera pelo relógio, lê o
 // instante embutido de volta e regera para aquele instante: os 16 bytes
 // têm de ser idênticos. É esta a trava contra a duplicação deliberada
-// registrada em docs/SPEC.md seção 11.2.
+// registrada em docs/10-armadilhas-e-decisoes-de-projeto.md seção 11.2.
 func TestGenerateAtMatchesGenerateLayout(t *testing.T) {
 	for _, level := range allLevels {
 		g := uuid.NewGeneratorWith(constantSource(0xA5A5_5A5A_C3C3_3C3C))

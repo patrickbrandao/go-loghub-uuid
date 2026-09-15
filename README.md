@@ -82,7 +82,7 @@ informa, preservando a ordenação da chave.
 
 > A fronteira só vale para UUIDs gravados no **mesmo nível**. Misturar
 > níveis na mesma coluna faz a consulta devolver linhas a menos, sem erro
-> nenhum. Detalhes em [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md).
+> nenhum. Detalhes em [docs/03-guia-completo.md](docs/03-guia-completo.md).
 
 ## Instalação
 
@@ -201,12 +201,12 @@ uso a que a biblioteca se destina — o gerador padrão é adequado.
 - **Mapa completo do projeto**: [STARTHERE.md](STARTHERE.md)
 - **Histórico de mudanças**: [CHANGELOG.md](CHANGELOG.md)
 - Vindo do pacote `github.com/google/uuid`:
-  [docs/MIGRATION.md](docs/MIGRATION.md)
-- Uso rápido: [docs/DEPLOY-FAST.md](docs/DEPLOY-FAST.md)
-- Uso completo (todas as funções): [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md)
-- Testes e benchmark: [docs/TEST-AND-BENCHMARK.md](docs/TEST-AND-BENCHMARK.md)
+  [docs/12-migracao-google-uuid.md](docs/12-migracao-google-uuid.md)
+- Uso rápido: [docs/02-guia-rapido.md](docs/02-guia-rapido.md)
+- Uso completo (todas as funções): [docs/03-guia-completo.md](docs/03-guia-completo.md)
+- Testes e benchmark: [docs/11-testes-e-benchmark.md](docs/11-testes-e-benchmark.md)
 - Especificação de desenvolvimento (agnóstica de linguagem):
-  [docs/SPEC.md](docs/SPEC.md)
+  [docs/INDEX.md](docs/INDEX.md)
 - Como contribuir: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Como relatar uma vulnerabilidade: [SECURITY.md](SECURITY.md)
 

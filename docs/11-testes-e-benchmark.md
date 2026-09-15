@@ -91,7 +91,10 @@ das fronteiras e monotonicidade quando o instante não regride, nos três
 níveis mais um nível desconhecido. `FuzzGregorianUnixTime` recebe um
 instante gregoriano em toda a faixa do inteiro com sinal e exige o par
 canônico, com a fração entre zero e um segundo e múltipla de 100 ns: é a
-metade da faixa anterior a 1970 que a divisão truncada quebraria.
+metade da faixa anterior a 1970 que a divisão truncada quebraria. Ver
+[04-uuidv7-formato-e-niveis.md](04-uuidv7-formato-e-niveis.md) e
+[05-outras-versoes-uuid.md](05-outras-versoes-uuid.md) para as fórmulas
+correspondentes.
 
 Quando uma campanha encontra uma entrada que quebra o alvo, o Go a grava
 em `tests/testdata/fuzz/<Alvo>/<hash>` (diretório ignorado pelo Git) e a
@@ -190,7 +193,8 @@ gh workflow run ci.yml
 ```
 
 Uma tag só deve ser publicada com o fluxo `test` verde no commit
-correspondente; o procedimento está em [RELEASE.md](RELEASE.md).
+correspondente; o procedimento está em
+[13-processo-de-release.md](13-processo-de-release.md).
 
 #### Reproduzir uma falha de fuzzing do CI
 
@@ -245,17 +249,20 @@ O escopo é **comportamento, não velocidade**. Há cinco testes:
   do outro pacote quando o chamador sai de uma sequência de relógio e
   volta. Medido em cerca de 7% das tentativas num Apple M2. O mecanismo
   é a janela do mesmo tique de 100 ns com o piso do relógio zerado, e
-  **não** adiantamento acumulado — ver a seção 4.2 do `docs/SPEC.md`.
+  **não** adiantamento acumulado — ver
+  [06-relogio-e-concorrencia.md](06-relogio-e-concorrencia.md) seção
+  4.2.
 - `TestLoghubDoesNotRepeatV1OnSequenceReturn` submete esta biblioteca ao
   roteiro idêntico e exige zero repetições.
 - `TestClockAdvanceDiffersBetweenLibraries` mede as duas escolhas de
   projeto lado a lado: o outro pacote não adianta o relógio e incrementa
   a sequência, esta adianta o relógio e mantém a sequência.
 - `TestGoogleReadsGregorianGoldenVectors` submete os vetores dourados
-  das versões 1 e 2 (`docs/SPEC.md` seção 10, caso 18) ao leitor do
-  outro pacote e exige os mesmos campos: instante, sequência, nó,
-  domínio e identificador. São os mesmos bytes lidos por dois leitores
-  independentes.
+  das versões 1 e 2
+  ([09-vetores-dourados-e-apendice-rfc.md](09-vetores-dourados-e-apendice-rfc.md),
+  caso 18) ao leitor do outro pacote e exige os mesmos campos: instante,
+  sequência, nó, domínio e identificador. São os mesmos bytes lidos por
+  dois leitores independentes.
 - `TestGoogleV6LayoutDiffersFromRFC9562` mede por que a versão 6 fica
   fora dessa conferência: na v1.6.0 o outro pacote grava o carimbo de 64
   bits inteiro nos bytes 0 a 7 e sobrepõe a versão, o que não é a ordem

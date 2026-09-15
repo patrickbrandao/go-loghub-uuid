@@ -63,13 +63,24 @@ go-loghub-uuid/
 ├── CONTRIBUTING.md         # convenções e verificação local para quem contribui
 ├── CLAUDE.md               # instruções de manutenção (ferramental)
 │
-├── docs/                   # documentação de uso
-│   ├── DEPLOY-FAST.md
-│   ├── DEPLOY-FULL.md
-│   ├── MIGRATION.md        # vindo do pacote github.com/google/uuid
-│   ├── TEST-AND-BENCHMARK.md
-│   ├── SPEC.md             # reimplementar do zero; §11 = decisões firmadas
-│   └── RELEASE.md          # procedimento de publicação de versão
+├── docs/                   # documentação de uso e especificação (ver docs/INDEX.md)
+│   ├── INDEX.md            # índice com a ordem de leitura de todos os arquivos abaixo
+│   ├── 01-visao-geral.md
+│   ├── 02-guia-rapido.md
+│   ├── 03-guia-completo.md
+│   ├── 04-uuidv7-formato-e-niveis.md
+│   ├── 05-outras-versoes-uuid.md
+│   ├── 06-relogio-e-concorrencia.md
+│   ├── 07-parsing-e-conversao.md
+│   ├── 08-inspecao-serializacao-banco.md
+│   ├── 09-vetores-dourados-e-apendice-rfc.md   # casos de teste obrigatórios e vetores
+│   ├── 10-armadilhas-e-decisoes-de-projeto.md  # §11 = decisões firmadas
+│   ├── 11-testes-e-benchmark.md
+│   ├── 12-migracao-google-uuid.md              # vindo do pacote github.com/google/uuid
+│   └── 13-processo-de-release.md               # procedimento de publicação de versão
+│
+├── skill/                  # pacote Agent Skills: ensina agentes de IA a usar a biblioteca
+│   └── SKILL.md            # instruções de uso, referência da API e exemplos
 │
 └── tests/                  # tudo que NÃO vai para produção
     ├── doc.go
@@ -185,7 +196,7 @@ próprias.
 > Todas preservam versão 7 e variante RFC. A fronteira só vale para
 > UUIDs do **mesmo nível**: os bits abaixo do milissegundo significam
 > coisas diferentes em cada um. Ver
-> [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md).
+> [docs/03-guia-completo.md](docs/03-guia-completo.md).
 
 ### 3.2 Demais versões de UUID
 
@@ -282,7 +293,7 @@ própria, independente do caminho do UUIDv7.
 `New`, `NewString`, `NewRandom`, `NewRandomFromReader`, `NewUUID`,
 `NewV6`, `NewV7`, `NewV7FromReader`, `NewMD5`, `NewSHA1`, `NewHash`,
 `NewDCESecurity`, `NewDCEPerson`, `NewDCEGroup`. Veja
-[docs/MIGRATION.md](docs/MIGRATION.md).
+[docs/12-migracao-google-uuid.md](docs/12-migracao-google-uuid.md).
 
 ### 3.7 Erros
 
@@ -327,23 +338,25 @@ por string continua cronológica.
 
 ## 5. Caminhos de leitura recomendados
 
-- **Só quero gerar**: [docs/DEPLOY-FAST.md](docs/DEPLOY-FAST.md)
-- **Quero usar tudo**: [docs/DEPLOY-FULL.md](docs/DEPLOY-FULL.md)
-- **Quero medir desempenho**: [docs/TEST-AND-BENCHMARK.md](docs/TEST-AND-BENCHMARK.md)
+- **Só quero gerar**: [docs/02-guia-rapido.md](docs/02-guia-rapido.md)
+- **Quero usar tudo**: [docs/03-guia-completo.md](docs/03-guia-completo.md)
+- **Quero medir desempenho**: [docs/11-testes-e-benchmark.md](docs/11-testes-e-benchmark.md)
 - **Quero reimplementar em outra linguagem**:
-  [docs/SPEC.md](docs/SPEC.md)
+  [docs/INDEX.md](docs/INDEX.md) — comece por 01, 04, 05, 06, 07 e 08
 - **Quero propor uma mudança de projeto, ou vou auditar a biblioteca**:
-  [docs/SPEC.md](docs/SPEC.md) seção 11, o registro de decisões firmadas
-  — o que já foi decidido, por quê, e o que justificaria rever.
+  [docs/10-armadilhas-e-decisoes-de-projeto.md](docs/10-armadilhas-e-decisoes-de-projeto.md)
+  seção 11, o registro de decisões firmadas — o que já foi decidido, por
+  quê, e o que justificaria rever.
 - **Quero ler o código**: comece por `uuid.go` (geração), depois
   `conversion.go` e `import.go`.
 - **Quero as outras versões**: `clock.go` primeiro (o relógio
   compartilhado), depois `version1.go`.
-- **Venho do pacote google/uuid**: [docs/MIGRATION.md](docs/MIGRATION.md),
+- **Venho do pacote google/uuid**:
+  [docs/12-migracao-google-uuid.md](docs/12-migracao-google-uuid.md),
   e `tests/compare/` para a diferença de comportamento provada em código.
   É um módulo aninhado, com `go.mod` próprio: a raiz continua sem
   nenhuma dependência.
-- **Vou publicar uma versão**: [docs/RELEASE.md](docs/RELEASE.md)
+- **Vou publicar uma versão**: [docs/13-processo-de-release.md](docs/13-processo-de-release.md)
 - **Vou contribuir ou relatar um problema de segurança**:
   [CONTRIBUTING.md](CONTRIBUTING.md) e [SECURITY.md](SECURITY.md)
 
@@ -369,4 +382,4 @@ go test ./ -run Example -v                          # exemplos executáveis
 Em VM modesta (Xeon 2.80 GHz): geração binária ~85–98 ns/UUID com **zero
 alocações** e mais de **11 mil UUIDs/ms** por núcleo; string ~165 ns com
 1 alocação de 48 bytes. Detalhes e tabelas em
-[docs/TEST-AND-BENCHMARK.md](docs/TEST-AND-BENCHMARK.md).
+[docs/11-testes-e-benchmark.md](docs/11-testes-e-benchmark.md).

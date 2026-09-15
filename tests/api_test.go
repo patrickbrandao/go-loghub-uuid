@@ -807,10 +807,11 @@ func TestNullUUIDTextAndBinary(t *testing.T) {
 // futura tenha de passar por aqui.
 //
 // Os três desserializadores (JSON, texto e binário) preservam o receptor
-// inteiro, seguindo a regra mestra de docs/SPEC.md seção 6.4. Scan é a
-// exceção registrada: preserva o identificador e derruba o booleano,
-// porque database/sql reaproveita o mesmo destino a cada linha e um
-// chamador que ignore o erro leria o valor da linha anterior.
+// inteiro, seguindo a regra mestra de docs/07-parsing-e-conversao.md
+// seção 6.4. Scan é a exceção registrada: preserva o identificador e
+// derruba o booleano, porque database/sql reaproveita o mesmo destino a
+// cada linha e um chamador que ignore o erro leria o valor da linha
+// anterior.
 //
 // REGRESSÃO: até a correção deste ciclo, texto e binário derrubavam o
 // booleano como Scan, enquanto o JSON o preservava, e a especificação

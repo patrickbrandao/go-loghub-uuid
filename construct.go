@@ -56,7 +56,8 @@ func saturatedInstant(t time.Time) (ms int64, micro, nano uint16) {
 // partir de um instante explícito: GenerateAt passa bits sorteados,
 // MinAt passa zeros e MaxAt passa uns. O caminho quente NÃO passa por
 // aqui: Generate mantém a sua própria cópia do empacotamento, para não
-// pagar uma chamada. Ver docs/SPEC.md seção 11.2.
+// pagar uma chamada. Ver docs/10-armadilhas-e-decisoes-de-projeto.md
+// seção 11.2.
 //
 // freeA são os 12 bits de rand_a, usados só no Nível 1 — nos níveis 2 e
 // 3 o campo carrega os microssegundos. freeB são os bits livres de

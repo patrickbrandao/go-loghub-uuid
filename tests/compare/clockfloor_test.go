@@ -73,7 +73,7 @@ func TestGoogleRepeatsV1OnSequenceReturn(t *testing.T) {
 	if repetidos == 0 {
 		t.Skipf("nenhuma repeticao em %d tentativas: nesta maquina as duas geracoes e as duas "+
 			"trocas de sequencia nunca couberam no mesmo tique de 100 ns. Isso NAO contradiz a "+
-			"afirmacao da secao 4.2 do docs/SPEC.md, so diz que a janela nao foi alcancada aqui.",
+			"afirmacao da secao 4.2 do docs/06-relogio-e-concorrencia.md, so diz que a janela nao foi alcancada aqui.",
 			tentativas)
 	}
 	t.Logf("github.com/google/uuid: %d UUIDv1 repetidos em %d tentativas (%.2f%%)",

@@ -57,9 +57,9 @@ func TestZeroGeneratorUsesDefaultEntropy(t *testing.T) {
 		}
 	}
 
-	// A tolerância é regra do tipo inteiro (docs/SPEC.md seção 5.2, caso
-	// 3): vale também para os nomes do UUIDv7, por versão e por nível, e
-	// para as versões 4 e 8, que não passam por Generate.
+	// A tolerância é regra do tipo inteiro (docs/06-relogio-e-concorrencia.md
+	// seção 5.2, caso 3): vale também para os nomes do UUIDv7, por versão e
+	// por nível, e para as versões 4 e 8, que não passam por Generate.
 	for name, g := range map[string]*uuid.Generator{"Generator zerado": &byValue, "ponteiro nulo": byPointer} {
 		if u := g.GenerateV7(); u.Version() != 7 || u.Variant() != 0b10 || u.IsZero() {
 			t.Fatalf("%s: GenerateV7 devolveu %s", name, u)
