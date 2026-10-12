@@ -111,7 +111,7 @@ jobs:
         if: matrix.go == 'stable'
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.13.2
+          version: v2.14.0
 
       - name: Testes com detector de corrida (modo -short)
         run: go test ./... -race -short

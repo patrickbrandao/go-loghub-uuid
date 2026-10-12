@@ -19,6 +19,21 @@ Convenções de cada seção:
 
 ## [Não publicado]
 
+### Infraestrutura
+
+- **`.github/workflows/ci.yml`: `golangci-lint` de `v2.13.2` para
+  `v2.14.0`.** A execução semanal de 2026-10-12 (run `38263596256`)
+  falhou só no job `test (go stable)`, no passo do linter: o `stable` do
+  `setup-go` passou a resolver para o Go 1.27.2, cujo export data dos
+  pacotes da biblioteca padrão está na versão 5, e o importador embutido
+  na `v2.13.2` aceita no máximo a 4. O resultado foram erros de
+  `typecheck` ("export data version 5 is greater than maximum supported
+  version 4") em `tests/benchmark-bulk/main.go`, sem nenhum achado real
+  no código. Reproduzido localmente: com Go 1.27.2 a `v2.13.2` acusa 8
+  erros de `typecheck` e a `v2.14.0` retorna 0 achados; com Go 1.27.1 as
+  duas passam. Nenhuma linha de código nem de `.golangci.yml` mudou, e
+  o job `go 1.22` não roda o linter.
+
 ## [v0.6.2] — 2026-09-14
 
 ### Documentação
